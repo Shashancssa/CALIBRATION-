@@ -6,15 +6,19 @@ def send_mail_alert(equipment_list):
     if not equipment_list:
         return
 
-    EMAIL_ADDR = os.getenv("shashank.c@kaynestechnology.net")
-    EMAIL_PASS = os.getenv("Kt8AWJB95FPa")
+    EMAIL_ADDR = os.getenv("EMAIL_ADDR")
+    EMAIL_PASS = os.getenv("EMAIL_PASS")
+
+
+    if not EMAIL_ADDR or not EMAIL_PASS:
+        raise ValueError("EMAIL_ADDR and EMAIL_PASS environment variables must be set")
 
     msg = EmailMessage()
-    msg['Subject'] = "🚨 KAYNES : Calibration Alert"
-    msg['From'] = f"Kaynes Tracker <{EMAIL_ADDR}>"
+    msg['Subject'] = "🚨 KAYNES ELECTRONICS : Calibration Alert"
+    msg['From'] = f"Kaynes Electronics Tracker <{EMAIL_ADDR}>"
     msg['To'] = EMAIL_ADDR
 
-    body = "KAYNES CALIBRATION ALERT\n"
+    body = "KAYNES ELECTRONICS CALIBRATION ALERT\n"
     body += "="*40 + "\n\n"
 
     for item in equipment_list:
