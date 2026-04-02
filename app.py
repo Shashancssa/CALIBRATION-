@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 import datetime as dt_module
 from email.message import EmailMessage
+from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, make_response
 from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -63,6 +64,45 @@ class CalibrationMaster(db.Model):
             "c21_remarks": self.c21_remarks or ""
         }
 
+
+class UserAccount(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='user')  # admin / user
+
+
+class LocationEmail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    location = db.Column(db.String(200), unique=True, nullable=False)
+    email = db.Column(db.String(200), nullable=False)
+
+
+def initialize_defaults():
+    if not UserAccount.query.filter_by(username='admin').first():
+        db.session.add(UserAccount(username='admin', password='admin123', role='admin'))
+    if not UserAccount.query.filter_by(username='user').first():
+        db.session.add(UserAccount(username='user', password='user123', role='user'))
+    db.session.commit()
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if session.get('role') != 'admin':
+            return redirect(url_for('index', alert='access_denied'))
+        return fn(*args, **kwargs)
+    return wrapper
+
 # --- MAINTAINING YOUR ALERT LOGIC WITH 30/15 DAY ADDITION ---
 def check_alerts():
     with app.app_context():
@@ -88,7 +128,16 @@ def check_alerts():
         EMAIL_PASS = "PKXbWyCKWPJF"
         msg = EmailMessage()
         msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
-        msg['To'] = "shashank.c@kaynestechnology.net"
+        location_mail_map = {m.location.strip().lower(): m.email for m in LocationEmail.query.all() if m.location and m.email}
+        recipients = set()
+        for due_item in (items_15 + items_30):
+            key = (due_item.c13_location or '').strip().lower()
+            if key and key in location_mail_map:
+                recipients.add(location_mail_map[key])
+        if not recipients:
+            recipients.add("shashank.c@kaynestechnology.net")
+
+        msg['To'] = ", ".join(sorted(recipients))
         msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
 
         body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
@@ -127,6 +176,8 @@ def send_test_email(subject, body):
         server.send_message(msg)
 
 @app.route('/send_test_email')
+@login_required
+@admin_required
 def send_test_email_route():
     try:
         send_test_email("KAYNES Test", "This is a manual test email from /send_test_email")
@@ -146,12 +197,43 @@ scheduler = BackgroundScheduler(timezone=ZoneInfo('Asia/Kolkata'))
 scheduler.add_job(func=check_alerts, trigger="cron", hour=9, minute=0)
 scheduler.start()
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = UserAccount.query.filter_by(username=username).first()
+        if user and user.password == password:
+            session['user'] = user.username
+            session['role'] = user.role
+            return redirect(url_for('index'))
+        return render_template('login.html', error='Invalid username or password')
+    return render_template('login.html', error=None)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@login_required
 def index():
     items = CalibrationMaster.query.all()
-    return render_template('index.html', items=items, today=datetime.now().date())
+    users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
+    location_mails = LocationEmail.query.order_by(LocationEmail.location.asc()).all() if session.get('role') == 'admin' else []
+    return render_template(
+        'index.html',
+        items=items,
+        today=datetime.now().date(),
+        current_role=session.get('role', 'user'),
+        users=users,
+        location_mails=location_mails
+    )
 
 @app.route('/download_master')
+@login_required
 def download_master():
     items = CalibrationMaster.query.all()
     today = date.today()
@@ -201,6 +283,8 @@ def download_master():
 
 # --- REMAINING ROUTES (YOUR ORIGINAL FLOW) ---
 @app.route('/manage_record', methods=['POST'])
+@login_required
+@admin_required
 def manage_record():
     d = request.form
     item = CalibrationMaster.query.filter_by(c2_asset_id=d.get('c2_asset_id')).first() or CalibrationMaster(c2_asset_id=d.get('c2_asset_id'))
@@ -249,6 +333,8 @@ def manage_record():
 
 
 @app.route('/upload_excel', methods=['POST'])
+@login_required
+@admin_required
 def upload_excel():
     file = request.files.get('excel_file')
     if not file or file.filename == '':
@@ -346,6 +432,8 @@ def upload_excel():
     return redirect(url_for('index', alert='upload_success', count=upserted))
 
 @app.route('/manual_alert')
+@login_required
+@admin_required
 def manual_alert():
     alert_sent = check_alerts()
     if alert_sent:
@@ -353,6 +441,8 @@ def manual_alert():
     return redirect(url_for('index', alert='none'))
 
 @app.route('/delete_record/<int:item_id>')
+@login_required
+@admin_required
 def delete_record(item_id):
     record = CalibrationMaster.query.get(item_id)
     if record:
@@ -360,9 +450,55 @@ def delete_record(item_id):
         db.session.commit()
     return redirect(url_for('index', alert='deleted'))
 
+
+@app.route('/manage_user', methods=['POST'])
+@login_required
+@admin_required
+def manage_user():
+    action = request.form.get('action')
+    username = request.form.get('username', '').strip()
+
+    if action == 'add':
+        password = request.form.get('password', '')
+        role = request.form.get('role', 'user')
+        if not username or not password or role not in ('admin', 'user'):
+            return redirect(url_for('index', alert='user_invalid'))
+        if UserAccount.query.filter_by(username=username).first():
+            return redirect(url_for('index', alert='user_exists'))
+        db.session.add(UserAccount(username=username, password=password, role=role))
+        db.session.commit()
+        return redirect(url_for('index', alert='user_added'))
+
+    if action == 'delete':
+        user = UserAccount.query.filter_by(username=username).first()
+        if not user or user.username == 'admin':
+            return redirect(url_for('index', alert='user_delete_blocked'))
+        db.session.delete(user)
+        db.session.commit()
+        return redirect(url_for('index', alert='user_deleted'))
+
+    return redirect(url_for('index', alert='user_invalid'))
+
+
+@app.route('/manage_location_mail', methods=['POST'])
+@login_required
+@admin_required
+def manage_location_mail():
+    location = request.form.get('location', '').strip()
+    email = request.form.get('email', '').strip()
+    if not location or not email:
+        return redirect(url_for('index', alert='location_mail_invalid'))
+
+    entry = LocationEmail.query.filter_by(location=location).first() or LocationEmail(location=location)
+    entry.email = email
+    db.session.add(entry)
+    db.session.commit()
+    return redirect(url_for('index', alert='location_mail_saved'))
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        initialize_defaults()
     host = os.getenv("FLASK_HOST", "0.0.0.0")
     port = int(os.getenv("FLASK_PORT", "5000"))
     app.run(host=host, port=port, debug=True, use_reloader=False)

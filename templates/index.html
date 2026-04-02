@@ -26,10 +26,12 @@
         <a href="/download_master" class="btn btn-success btn-sm me-3">
             <i class="bi bi-download"></i> Download Master CSV
         </a>
+        {% if current_role == 'admin' %}
         <a id="manualAlertBtn" href="/manual_alert" class="btn btn-warning btn-sm me-3">
             <i class="bi bi-bell-fill"></i> Send Due Alert
         </a>
-        <span class="text-light me-3 small">User: {{ session['user'] }}</span>
+        {% endif %}
+        <span class="text-light me-3 small">User: {{ session['user'] }} ({{ current_role|capitalize }})</span>
         <a href="/logout" class="btn btn-outline-light btn-sm">Logout</a>
     </div>
 </nav>
@@ -54,17 +56,35 @@
     <div class="alert alert-danger" role="alert">Unable to read the uploaded file. Please upload a valid Excel/CSV file.</div>
     {% elif request.args.get('alert') == 'upload_missing_asset' %}
     <div class="alert alert-danger" role="alert">Upload failed: column “Kaynes Asset ID” (or Asset ID) is required.</div>
+    {% elif request.args.get('alert') == 'access_denied' %}
+    <div class="alert alert-danger" role="alert">Access denied. Admin-only action.</div>
+    {% elif request.args.get('alert') == 'user_added' %}
+    <div class="alert alert-success" role="alert">User added successfully.</div>
+    {% elif request.args.get('alert') == 'user_deleted' %}
+    <div class="alert alert-warning" role="alert">User deleted successfully.</div>
+    {% elif request.args.get('alert') == 'user_exists' %}
+    <div class="alert alert-danger" role="alert">User already exists.</div>
+    {% elif request.args.get('alert') == 'user_delete_blocked' %}
+    <div class="alert alert-danger" role="alert">Cannot delete this user.</div>
+    {% elif request.args.get('alert') == 'user_invalid' %}
+    <div class="alert alert-danger" role="alert">Invalid user details.</div>
+    {% elif request.args.get('alert') == 'location_mail_saved' %}
+    <div class="alert alert-success" role="alert">Location email saved successfully.</div>
+    {% elif request.args.get('alert') == 'location_mail_invalid' %}
+    <div class="alert alert-danger" role="alert">Location and email are required.</div>
     {% endif %}
     <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item">
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#view"><i class="bi bi-table"></i> Master View</button>
         </li>
+        {% if current_role == 'admin' %}
         <li class="nav-item">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#addEdit"><i class="bi bi-pencil-square"></i> Add/Edit Record</button>
         </li>
         <li class="nav-item">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#admin"><i class="bi bi-shield-lock"></i> Admin & Upload</button>
         </li>
+        {% endif %}
     </ul>
 
     <div class="tab-content border bg-white p-3 shadow-sm">
@@ -134,8 +154,12 @@
                                 {% endif %}
                             </td>
                             <td>
+                                {% if current_role == 'admin' %}
                                 <button onclick='populateForm({{ item.to_dict() | tojson }})' class="btn btn-primary btn-sm py-0 px-1" title="Edit"><i class="bi bi-pencil-fill"></i></button>
                                 <a href="/delete_record/{{ item.id }}" class="btn btn-danger btn-sm py-0 px-1 ms-1" title="Delete" onclick="return confirm('Delete this record?');"><i class="bi bi-trash-fill"></i></a>
+                                {% else %}
+                                <span class="text-muted">View only</span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -188,6 +212,43 @@
                     <form action="/upload_excel" method="POST" enctype="multipart/form-data">
                         <input type="file" name="excel_file" class="form-control mb-2" required>
                         <button type="submit" class="btn btn-primary btn-sm w-100">Upload & Update</button>
+                    </form>
+                </div>
+                <div class="col-md-3 border p-3 rounded shadow-sm ms-md-3 mt-3 mt-md-0">
+                    <h5><i class="bi bi-geo-alt-fill text-primary"></i> Location Email Map</h5>
+                    <form action="/manage_location_mail" method="POST" class="mb-3">
+                        <input type="text" name="location" class="form-control mb-2" placeholder="Location" required>
+                        <input type="email" name="email" class="form-control mb-2" placeholder="Email ID" required>
+                        <button type="submit" class="btn btn-outline-primary btn-sm w-100">Save Location Mail</button>
+                    </form>
+                    <div class="small">
+                        {% for lm in location_mails %}
+                        <div><strong>{{ lm.location }}</strong> → {{ lm.email }}</div>
+                        {% else %}
+                        <div class="text-muted">No location mail mapping yet.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-md-3 border p-3 rounded shadow-sm ms-md-3 mt-3 mt-md-0">
+                    <h5><i class="bi bi-people-fill text-success"></i> User Management</h5>
+                    <form action="/manage_user" method="POST" class="mb-2">
+                        <input type="hidden" name="action" value="add">
+                        <input type="text" name="username" class="form-control mb-2" placeholder="Username" required>
+                        <input type="password" name="password" class="form-control mb-2" placeholder="Password" required>
+                        <select name="role" class="form-select mb-2">
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button type="submit" class="btn btn-outline-success btn-sm w-100">Add User</button>
+                    </form>
+                    <form action="/manage_user" method="POST">
+                        <input type="hidden" name="action" value="delete">
+                        <select name="username" class="form-select mb-2">
+                            {% for u in users %}
+                            <option value="{{ u.username }}">{{ u.username }} ({{ u.role }})</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-outline-danger btn-sm w-100">Delete User</button>
                     </form>
                 </div>
             </div>
@@ -275,5 +336,8 @@
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<footer class="text-center py-2 bg-white border-top small">
+    Developed by :- Shashank C Mail:- Shashank.c@kaynestechnology.net
+</footer>
 </body>
 </html>
