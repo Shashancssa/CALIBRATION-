@@ -1,18 +1,26 @@
 import os
 import smtplib
+import sys
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import datetime as dt_module
 from email.message import EmailMessage
+from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, make_response
 from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
 
-app = Flask(__name__)
+BASE_DIR = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'))
 app.secret_key = "kaynes_ff_qam_42_final"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///calibration_master.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+
+def _normalize_header(header):
+    """Normalize uploaded sheet headers for resilient column mapping."""
+    return ''.join(ch.lower() for ch in str(header) if ch.isalnum())
 
 # --- DATABASE MODEL (MAINTAINING YOUR 21 COLUMNS) ---
 class CalibrationMaster(db.Model):
@@ -56,6 +64,59 @@ class CalibrationMaster(db.Model):
             "c21_remarks": self.c21_remarks or ""
         }
 
+
+class UserAccount(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='user')  # admin / user
+
+
+class LocationEmail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    location = db.Column(db.String(200), unique=True, nullable=False)
+    email = db.Column(db.String(200), nullable=False)
+
+
+class MailConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender_email = db.Column(db.String(200), nullable=False)
+    app_key = db.Column(db.String(300), nullable=False)
+    default_to = db.Column(db.String(500), nullable=True)
+    smtp_host = db.Column(db.String(100), nullable=False, default='smtp.zoho.com')
+    smtp_port = db.Column(db.Integer, nullable=False, default=465)
+    is_active = db.Column(db.Boolean, default=True)
+
+
+def initialize_defaults():
+    if not UserAccount.query.filter_by(username='admin').first():
+        db.session.add(UserAccount(username='admin', password='admin123', role='admin'))
+    if not UserAccount.query.filter_by(username='user').first():
+        db.session.add(UserAccount(username='user', password='user123', role='user'))
+    db.session.commit()
+
+
+def get_mail_config():
+    return MailConfig.query.filter_by(is_active=True).order_by(MailConfig.id.desc()).first()
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if session.get('role') != 'admin':
+            return redirect(url_for('index', alert='access_denied'))
+        return fn(*args, **kwargs)
+    return wrapper
+
 # --- MAINTAINING YOUR ALERT LOGIC WITH 30/15 DAY ADDITION ---
 def check_alerts():
     with app.app_context():
@@ -77,28 +138,45 @@ def check_alerts():
             # No pending alerts in window, do nothing
             return False
 
-        EMAIL_ADDR = "shashank.c@kaynestechnology.net"
-        EMAIL_PASS = "PKXbWyCKWPJF"
+        mail_cfg = get_mail_config()
+        if not mail_cfg:
+            print("Mail config missing. Add sender email and app key in Admin panel.")
+            return False
+
+        EMAIL_ADDR = mail_cfg.sender_email
+        EMAIL_PASS = mail_cfg.app_key
         msg = EmailMessage()
-        msg['From'] = f"Calibration System <{EMAIL_ADDR}>"
-        msg['To'] = "shashank.c@kaynestechnology.net"
+        msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
+        location_mail_map = {m.location.strip().lower(): m.email for m in LocationEmail.query.all() if m.location and m.email}
+        recipients = set()
+        for due_item in (items_15 + items_30):
+            key = (due_item.c13_location or '').strip().lower()
+            if key and key in location_mail_map:
+                recipients.add(location_mail_map[key])
+        if not recipients:
+            if mail_cfg.default_to:
+                recipients.update([x.strip() for x in mail_cfg.default_to.split(',') if x.strip()])
+            else:
+                recipients.add(EMAIL_ADDR)
+
+        msg['To'] = ", ".join(sorted(recipients))
         msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
 
-        body = "KAYNES TECHNOLOGY - CALIBRATION ALERT\n" + "="*40 + "\n"
+        body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
         if items_15:
             body += "\n🔴 15 DAYS LEFT:\n"
             for i in items_15:
                 days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
         if items_30:
             body += "\n🟡 30 DAYS LEFT:\n"
             for i in items_30:
                 days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
 
         msg.set_content(body)
         try:
-            with smtplib.SMTP_SSL('smtp.zoho.com', 465) as server:
+            with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
                 server.login(EMAIL_ADDR, EMAIL_PASS)
                 server.send_message(msg)
             return True
@@ -107,19 +185,26 @@ def check_alerts():
             return False
 
 def send_test_email(subject, body):
-    EMAIL_ADDR = "shashank.c@kaynestechnology.net"
-    EMAIL_PASS = "Kt8AWJB95FPa"  # put the app-specific password here
+    mail_cfg = get_mail_config()
+    if not mail_cfg:
+        raise ValueError("Mail config missing. Please save Sender Mail + App Key in Admin panel.")
+
+    EMAIL_ADDR = mail_cfg.sender_email
+    EMAIL_PASS = mail_cfg.app_key
+    recipients = mail_cfg.default_to or EMAIL_ADDR
     msg = EmailMessage()
-    msg['From'] = f"Calibration System <{EMAIL_ADDR}>"
-    msg['To'] = "shashank.c@kaynestechnology.net"
+    msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
+    msg['To'] = recipients
     msg['Subject'] = subject
     msg.set_content(body)
 
-    with smtplib.SMTP_SSL('smtp.zoho.com', 465) as server:
+    with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
         server.login(EMAIL_ADDR, EMAIL_PASS)
         server.send_message(msg)
 
 @app.route('/send_test_email')
+@login_required
+@admin_required
 def send_test_email_route():
     try:
         send_test_email("KAYNES Test", "This is a manual test email from /send_test_email")
@@ -139,22 +224,84 @@ scheduler = BackgroundScheduler(timezone=ZoneInfo('Asia/Kolkata'))
 scheduler.add_job(func=check_alerts, trigger="cron", hour=9, minute=0)
 scheduler.start()
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = UserAccount.query.filter_by(username=username).first()
+        if user and user.password == password:
+            session['user'] = user.username
+            session['role'] = user.role
+            return redirect(url_for('index'))
+        return render_template('login.html', error='Invalid username or password')
+    return render_template('login.html', error=None)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@login_required
 def index():
     items = CalibrationMaster.query.all()
-    return render_template('index.html', items=items, today=datetime.now().date())
+    users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
+    location_mails = LocationEmail.query.order_by(LocationEmail.location.asc()).all() if session.get('role') == 'admin' else []
+    mail_cfg = get_mail_config() if session.get('role') == 'admin' else None
+    return render_template(
+        'index.html',
+        items=items,
+        today=datetime.now().date(),
+        current_role=session.get('role', 'user'),
+        users=users,
+        location_mails=location_mails,
+        mail_cfg=mail_cfg
+    )
 
 @app.route('/download_master')
+@login_required
 def download_master():
     items = CalibrationMaster.query.all()
     today = date.today()
     data = []
     for item in items:
-        row = item.to_dict()
-        if item.c20_due_date:
-            row['Days Left'] = (item.c20_due_date - today).days
+        days_left = (item.c20_due_date - today).days if item.c20_due_date else None
+        if days_left is None:
+            status = 'N/A'
+        elif days_left <= 15:
+            status = '15D'
+        elif days_left <= 30:
+            status = '30D'
         else:
-            row['Days Left'] = 'N/A'
+            status = 'OK'
+
+        row = {
+            "Sl. No": item.c1_sl_no or "",
+            "Kaynes Asset ID": item.c2_asset_id or "",
+            "Name of Eqpmt.": item.c3_eq_name or "",
+            "Make": item.c4_make or "",
+            "Model No.": item.c5_model_no or "",
+            "Equipment Sl No": item.c6_eq_sl_no or "",
+            "Range": item.c7_range or "",
+            "Accuracy": item.c8_accuracy or "",
+            "Acceptance Criteria": item.c9_acceptance_criteria or "",
+            "Application": item.c10_application or "",
+            "Parameter": item.c11_parameter or "",
+            "Owner": item.c12_owner or "",
+            "Location (Line Name)": item.c13_location or "",
+            "Calibration Agency": item.c14_cal_agency or "",
+            "Type of Agency (NABL Lab, Internal, Traceable to NABL Lab, Authorized Service Provider)": item.c15_is_nabl or "",
+            "Calibration or Verification method (External / Internal / Onsite / Verification)": item.c16_verif_method or "",
+            "Calibration Procedure Reference": item.c21_remarks or "",
+            "Calibration Frequency": item.c17_frequency or "",
+            "Calibration Certificate No.": item.c18_cert_no or "",
+            "Calibration Date": item.c19_cal_date.strftime('%Y-%m-%d') if item.c19_cal_date else "",
+            "Due Date": item.c20_due_date.strftime('%Y-%m-%d') if item.c20_due_date else "",
+            "Status": status
+        }
         data.append(row)
     df = pd.DataFrame(data)
     csv_data = df.to_csv(index=False)
@@ -165,6 +312,8 @@ def download_master():
 
 # --- REMAINING ROUTES (YOUR ORIGINAL FLOW) ---
 @app.route('/manage_record', methods=['POST'])
+@login_required
+@admin_required
 def manage_record():
     d = request.form
     item = CalibrationMaster.query.filter_by(c2_asset_id=d.get('c2_asset_id')).first() or CalibrationMaster(c2_asset_id=d.get('c2_asset_id'))
@@ -211,7 +360,109 @@ def manage_record():
     db.session.commit()
     return redirect(url_for('index'))
 
+
+@app.route('/upload_excel', methods=['POST'])
+@login_required
+@admin_required
+def upload_excel():
+    file = request.files.get('excel_file')
+    if not file or file.filename == '':
+        return redirect(url_for('index', alert='upload_no_file'))
+
+    try:
+        # Supports xlsx/xls (and csv as a fallback if users provide csv)
+        if file.filename.lower().endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+    except Exception as e:
+        print(f"Upload read error: {e}")
+        return redirect(url_for('index', alert='upload_read_error'))
+
+    # Map many possible header variants to existing DB fields.
+    header_map = {
+        'slno': 'c1_sl_no',
+        'serialnumber': 'c1_sl_no',
+        'kaynesassetid': 'c2_asset_id',
+        'assetid': 'c2_asset_id',
+        'nameofeqpmt': 'c3_eq_name',
+        'equipname': 'c3_eq_name',
+        'equipmentname': 'c3_eq_name',
+        'make': 'c4_make',
+        'modelno': 'c5_model_no',
+        'equipmentslno': 'c6_eq_sl_no',
+        'range': 'c7_range',
+        'accuracy': 'c8_accuracy',
+        'acceptancecriteria': 'c9_acceptance_criteria',
+        'application': 'c10_application',
+        'parameter': 'c11_parameter',
+        'owner': 'c12_owner',
+        'locationlinename': 'c13_location',
+        'location': 'c13_location',
+        'calibrationagency': 'c14_cal_agency',
+        'typeofagencynabllabinternaltraceabletonabllabauthorizedserviceprovider': 'c15_is_nabl',
+        'typeofagency': 'c15_is_nabl',
+        'calibrationorverificationmethodexternalinternalonsiteverification': 'c16_verif_method',
+        'calibrationorverificationmethod': 'c16_verif_method',
+        'calibrationprocedurereference': 'c21_remarks',
+        'calibrationfrequency': 'c17_frequency',
+        'calibrationcertificateno': 'c18_cert_no',
+        'calibrationdate': 'c19_cal_date',
+        'duedate': 'c20_due_date',
+    }
+
+    resolved_columns = {}
+    for col in df.columns:
+        key = _normalize_header(col)
+        mapped = header_map.get(key)
+        if mapped:
+            resolved_columns[col] = mapped
+
+    # Require at least Asset ID to upsert records
+    if 'c2_asset_id' not in resolved_columns.values():
+        return redirect(url_for('index', alert='upload_missing_asset'))
+
+    upserted = 0
+    for _, row in df.iterrows():
+        row_data = {}
+        for src_col, model_col in resolved_columns.items():
+            value = row.get(src_col)
+            if pd.isna(value):
+                continue
+            row_data[model_col] = value
+
+        asset_id = str(row_data.get('c2_asset_id', '')).strip()
+        if not asset_id:
+            continue
+
+        item = CalibrationMaster.query.filter_by(c2_asset_id=asset_id).first() or CalibrationMaster(c2_asset_id=asset_id)
+
+        for field, value in row_data.items():
+            if field in ('c19_cal_date', 'c20_due_date'):
+                parsed = None
+                if isinstance(value, (datetime, pd.Timestamp)):
+                    parsed = value.date()
+                else:
+                    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y'):
+                        try:
+                            parsed = datetime.strptime(str(value).strip(), fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                if parsed:
+                    setattr(item, field, parsed)
+            else:
+                setattr(item, field, str(value).strip())
+
+        db.session.add(item)
+        upserted += 1
+
+    db.session.commit()
+    return redirect(url_for('index', alert='upload_success', count=upserted))
+
 @app.route('/manual_alert')
+@login_required
+@admin_required
 def manual_alert():
     alert_sent = check_alerts()
     if alert_sent:
@@ -219,6 +470,8 @@ def manual_alert():
     return redirect(url_for('index', alert='none'))
 
 @app.route('/delete_record/<int:item_id>')
+@login_required
+@admin_required
 def delete_record(item_id):
     record = CalibrationMaster.query.get(item_id)
     if record:
@@ -226,7 +479,86 @@ def delete_record(item_id):
         db.session.commit()
     return redirect(url_for('index', alert='deleted'))
 
+
+@app.route('/manage_user', methods=['POST'])
+@login_required
+@admin_required
+def manage_user():
+    action = request.form.get('action')
+    username = request.form.get('username', '').strip()
+
+    if action == 'add':
+        password = request.form.get('password', '')
+        role = request.form.get('role', 'user')
+        if not username or not password or role not in ('admin', 'user'):
+            return redirect(url_for('index', alert='user_invalid'))
+        if UserAccount.query.filter_by(username=username).first():
+            return redirect(url_for('index', alert='user_exists'))
+        db.session.add(UserAccount(username=username, password=password, role=role))
+        db.session.commit()
+        return redirect(url_for('index', alert='user_added'))
+
+    if action == 'delete':
+        user = UserAccount.query.filter_by(username=username).first()
+        if not user or user.username == 'admin':
+            return redirect(url_for('index', alert='user_delete_blocked'))
+        db.session.delete(user)
+        db.session.commit()
+        return redirect(url_for('index', alert='user_deleted'))
+
+    return redirect(url_for('index', alert='user_invalid'))
+
+
+@app.route('/manage_location_mail', methods=['POST'])
+@login_required
+@admin_required
+def manage_location_mail():
+    location = request.form.get('location', '').strip()
+    email = request.form.get('email', '').strip()
+    if not location or not email:
+        return redirect(url_for('index', alert='location_mail_invalid'))
+
+    entry = LocationEmail.query.filter_by(location=location).first() or LocationEmail(location=location)
+    entry.email = email
+    db.session.add(entry)
+    db.session.commit()
+    return redirect(url_for('index', alert='location_mail_saved'))
+
+
+@app.route('/save_mail_config', methods=['POST'])
+@login_required
+@admin_required
+def save_mail_config():
+    sender_email = request.form.get('sender_email', '').strip()
+    app_key = request.form.get('app_key', '').strip()
+    default_to = request.form.get('default_to', '').strip()
+    smtp_host = request.form.get('smtp_host', 'smtp.zoho.com').strip() or 'smtp.zoho.com'
+    smtp_port_raw = request.form.get('smtp_port', '465').strip() or '465'
+
+    try:
+        smtp_port = int(smtp_port_raw)
+    except ValueError:
+        return redirect(url_for('index', alert='mail_cfg_invalid'))
+
+    if not sender_email or not app_key:
+        return redirect(url_for('index', alert='mail_cfg_invalid'))
+
+    # Keep one active config record; update latest if exists.
+    cfg = get_mail_config() or MailConfig(sender_email=sender_email, app_key=app_key)
+    cfg.sender_email = sender_email
+    cfg.app_key = app_key
+    cfg.default_to = default_to
+    cfg.smtp_host = smtp_host
+    cfg.smtp_port = smtp_port
+    cfg.is_active = True
+    db.session.add(cfg)
+    db.session.commit()
+    return redirect(url_for('index', alert='mail_cfg_saved'))
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True, use_reloader=False)
+        initialize_defaults()
+    host = os.getenv("FLASK_HOST", "0.0.0.0")
+    port = int(os.getenv("FLASK_PORT", "5000"))
+    app.run(host=host, port=port, debug=True, use_reloader=False)
