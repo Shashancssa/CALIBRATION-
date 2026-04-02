@@ -1,5 +1,6 @@
 import os
 import smtplib
+import sys
 import pandas as pd
 from datetime import date, datetime, timedelta
 import datetime as dt_module
@@ -8,7 +9,8 @@ from flask import Flask, render_template, request, redirect, url_for, session, m
 from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
 
-app = Flask(__name__)
+BASE_DIR = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'))
 app.secret_key = "kaynes_ff_qam_42_final"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///calibration_master.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -94,12 +96,12 @@ def check_alerts():
             body += "\n🔴 15 DAYS LEFT:\n"
             for i in items_15:
                 days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
         if items_30:
             body += "\n🟡 30 DAYS LEFT:\n"
             for i in items_30:
                 days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
 
         msg.set_content(body)
         try:
@@ -361,4 +363,6 @@ def delete_record(item_id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True, use_reloader=False)
+    host = os.getenv("FLASK_HOST", "0.0.0.0")
+    port = int(os.getenv("FLASK_PORT", "5000"))
+    app.run(host=host, port=port, debug=True, use_reloader=False)

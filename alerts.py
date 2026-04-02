@@ -22,7 +22,7 @@ def send_mail_alert(equipment_list):
     body += "="*40 + "\n\n"
 
     for item in equipment_list:
-        body += f"Asset: {item.c2_asset_id} | Due: {item.c20_due_date}\n"
+        body += f"Asset: {item.c2_asset_id} | Location: {item.c13_location or 'N/A'} | Due: {item.c20_due_date}\n"
 
     msg.set_content(body)
 
