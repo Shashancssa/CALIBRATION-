@@ -85,11 +85,11 @@ def check_alerts():
         EMAIL_ADDR = "shashank.c@kaynestechnology.net"
         EMAIL_PASS = "PKXbWyCKWPJF"
         msg = EmailMessage()
-        msg['From'] = f"Calibration System <{EMAIL_ADDR}>"
+        msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
         msg['To'] = "shashank.c@kaynestechnology.net"
         msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
 
-        body = "KAYNES TECHNOLOGY - CALIBRATION ALERT\n" + "="*40 + "\n"
+        body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
         if items_15:
             body += "\n🔴 15 DAYS LEFT:\n"
             for i in items_15:
@@ -115,7 +115,7 @@ def send_test_email(subject, body):
     EMAIL_ADDR = "shashank.c@kaynestechnology.net"
     EMAIL_PASS = "Kt8AWJB95FPa"  # put the app-specific password here
     msg = EmailMessage()
-    msg['From'] = f"Calibration System <{EMAIL_ADDR}>"
+    msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
     msg['To'] = "shashank.c@kaynestechnology.net"
     msg['Subject'] = subject
     msg.set_content(body)
@@ -155,11 +155,40 @@ def download_master():
     today = date.today()
     data = []
     for item in items:
-        row = item.to_dict()
-        if item.c20_due_date:
-            row['Days Left'] = (item.c20_due_date - today).days
+        days_left = (item.c20_due_date - today).days if item.c20_due_date else None
+        if days_left is None:
+            status = 'N/A'
+        elif days_left <= 15:
+            status = '15D'
+        elif days_left <= 30:
+            status = '30D'
         else:
-            row['Days Left'] = 'N/A'
+            status = 'OK'
+
+        row = {
+            "Sl. No": item.c1_sl_no or "",
+            "Kaynes Asset ID": item.c2_asset_id or "",
+            "Name of Eqpmt.": item.c3_eq_name or "",
+            "Make": item.c4_make or "",
+            "Model No.": item.c5_model_no or "",
+            "Equipment Sl No": item.c6_eq_sl_no or "",
+            "Range": item.c7_range or "",
+            "Accuracy": item.c8_accuracy or "",
+            "Acceptance Criteria": item.c9_acceptance_criteria or "",
+            "Application": item.c10_application or "",
+            "Parameter": item.c11_parameter or "",
+            "Owner": item.c12_owner or "",
+            "Location (Line Name)": item.c13_location or "",
+            "Calibration Agency": item.c14_cal_agency or "",
+            "Type of Agency (NABL Lab, Internal, Traceable to NABL Lab, Authorized Service Provider)": item.c15_is_nabl or "",
+            "Calibration or Verification method (External / Internal / Onsite / Verification)": item.c16_verif_method or "",
+            "Calibration Procedure Reference": item.c21_remarks or "",
+            "Calibration Frequency": item.c17_frequency or "",
+            "Calibration Certificate No.": item.c18_cert_no or "",
+            "Calibration Date": item.c19_cal_date.strftime('%Y-%m-%d') if item.c19_cal_date else "",
+            "Due Date": item.c20_due_date.strftime('%Y-%m-%d') if item.c20_due_date else "",
+            "Status": status
+        }
         data.append(row)
     df = pd.DataFrame(data)
     csv_data = df.to_csv(index=False)

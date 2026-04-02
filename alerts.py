@@ -14,11 +14,11 @@ def send_mail_alert(equipment_list):
         raise ValueError("EMAIL_ADDR and EMAIL_PASS environment variables must be set")
 
     msg = EmailMessage()
-    msg['Subject'] = "🚨 KAYNES : Calibration Alert"
-    msg['From'] = f"Kaynes Tracker <{EMAIL_ADDR}>"
+    msg['Subject'] = "🚨 KAYNES ELECTRONICS : Calibration Alert"
+    msg['From'] = f"Kaynes Electronics Tracker <{EMAIL_ADDR}>"
     msg['To'] = EMAIL_ADDR
 
-    body = "KAYNES CALIBRATION ALERT\n"
+    body = "KAYNES ELECTRONICS CALIBRATION ALERT\n"
     body += "="*40 + "\n\n"
 
     for item in equipment_list:
