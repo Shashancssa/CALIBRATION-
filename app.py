@@ -1,7 +1,7 @@
 import os
 import smtplib
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import datetime as dt_module
 from email.message import EmailMessage
 from flask import Flask, render_template, request, redirect, url_for, session, make_response
