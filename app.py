@@ -78,12 +78,26 @@ class LocationEmail(db.Model):
     email = db.Column(db.String(200), nullable=False)
 
 
+class MailConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender_email = db.Column(db.String(200), nullable=False)
+    app_key = db.Column(db.String(300), nullable=False)
+    default_to = db.Column(db.String(500), nullable=True)
+    smtp_host = db.Column(db.String(100), nullable=False, default='smtp.zoho.com')
+    smtp_port = db.Column(db.Integer, nullable=False, default=465)
+    is_active = db.Column(db.Boolean, default=True)
+
+
 def initialize_defaults():
     if not UserAccount.query.filter_by(username='admin').first():
         db.session.add(UserAccount(username='admin', password='admin123', role='admin'))
     if not UserAccount.query.filter_by(username='user').first():
         db.session.add(UserAccount(username='user', password='user123', role='user'))
     db.session.commit()
+
+
+def get_mail_config():
+    return MailConfig.query.filter_by(is_active=True).order_by(MailConfig.id.desc()).first()
 
 
 def login_required(fn):
@@ -124,8 +138,13 @@ def check_alerts():
             # No pending alerts in window, do nothing
             return False
 
-        EMAIL_ADDR = "shashank.c@kaynestechnology.net"
-        EMAIL_PASS = "PKXbWyCKWPJF"
+        mail_cfg = get_mail_config()
+        if not mail_cfg:
+            print("Mail config missing. Add sender email and app key in Admin panel.")
+            return False
+
+        EMAIL_ADDR = mail_cfg.sender_email
+        EMAIL_PASS = mail_cfg.app_key
         msg = EmailMessage()
         msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
         location_mail_map = {m.location.strip().lower(): m.email for m in LocationEmail.query.all() if m.location and m.email}
@@ -135,7 +154,10 @@ def check_alerts():
             if key and key in location_mail_map:
                 recipients.add(location_mail_map[key])
         if not recipients:
-            recipients.add("shashank.c@kaynestechnology.net")
+            if mail_cfg.default_to:
+                recipients.update([x.strip() for x in mail_cfg.default_to.split(',') if x.strip()])
+            else:
+                recipients.add(EMAIL_ADDR)
 
         msg['To'] = ", ".join(sorted(recipients))
         msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
@@ -154,7 +176,7 @@ def check_alerts():
 
         msg.set_content(body)
         try:
-            with smtplib.SMTP_SSL('smtp.zoho.com', 465) as server:
+            with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
                 server.login(EMAIL_ADDR, EMAIL_PASS)
                 server.send_message(msg)
             return True
@@ -163,15 +185,20 @@ def check_alerts():
             return False
 
 def send_test_email(subject, body):
-    EMAIL_ADDR = "shashank.c@kaynestechnology.net"
-    EMAIL_PASS = "Kt8AWJB95FPa"  # put the app-specific password here
+    mail_cfg = get_mail_config()
+    if not mail_cfg:
+        raise ValueError("Mail config missing. Please save Sender Mail + App Key in Admin panel.")
+
+    EMAIL_ADDR = mail_cfg.sender_email
+    EMAIL_PASS = mail_cfg.app_key
+    recipients = mail_cfg.default_to or EMAIL_ADDR
     msg = EmailMessage()
     msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
-    msg['To'] = "shashank.c@kaynestechnology.net"
+    msg['To'] = recipients
     msg['Subject'] = subject
     msg.set_content(body)
 
-    with smtplib.SMTP_SSL('smtp.zoho.com', 465) as server:
+    with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
         server.login(EMAIL_ADDR, EMAIL_PASS)
         server.send_message(msg)
 
@@ -223,13 +250,15 @@ def index():
     items = CalibrationMaster.query.all()
     users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
     location_mails = LocationEmail.query.order_by(LocationEmail.location.asc()).all() if session.get('role') == 'admin' else []
+    mail_cfg = get_mail_config() if session.get('role') == 'admin' else None
     return render_template(
         'index.html',
         items=items,
         today=datetime.now().date(),
         current_role=session.get('role', 'user'),
         users=users,
-        location_mails=location_mails
+        location_mails=location_mails,
+        mail_cfg=mail_cfg
     )
 
 @app.route('/download_master')
@@ -494,6 +523,37 @@ def manage_location_mail():
     db.session.add(entry)
     db.session.commit()
     return redirect(url_for('index', alert='location_mail_saved'))
+
+
+@app.route('/save_mail_config', methods=['POST'])
+@login_required
+@admin_required
+def save_mail_config():
+    sender_email = request.form.get('sender_email', '').strip()
+    app_key = request.form.get('app_key', '').strip()
+    default_to = request.form.get('default_to', '').strip()
+    smtp_host = request.form.get('smtp_host', 'smtp.zoho.com').strip() or 'smtp.zoho.com'
+    smtp_port_raw = request.form.get('smtp_port', '465').strip() or '465'
+
+    try:
+        smtp_port = int(smtp_port_raw)
+    except ValueError:
+        return redirect(url_for('index', alert='mail_cfg_invalid'))
+
+    if not sender_email or not app_key:
+        return redirect(url_for('index', alert='mail_cfg_invalid'))
+
+    # Keep one active config record; update latest if exists.
+    cfg = get_mail_config() or MailConfig(sender_email=sender_email, app_key=app_key)
+    cfg.sender_email = sender_email
+    cfg.app_key = app_key
+    cfg.default_to = default_to
+    cfg.smtp_host = smtp_host
+    cfg.smtp_port = smtp_port
+    cfg.is_active = True
+    db.session.add(cfg)
+    db.session.commit()
+    return redirect(url_for('index', alert='mail_cfg_saved'))
 
 if __name__ == '__main__':
     with app.app_context():

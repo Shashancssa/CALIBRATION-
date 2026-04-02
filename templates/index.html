@@ -72,6 +72,10 @@
     <div class="alert alert-success" role="alert">Location email saved successfully.</div>
     {% elif request.args.get('alert') == 'location_mail_invalid' %}
     <div class="alert alert-danger" role="alert">Location and email are required.</div>
+    {% elif request.args.get('alert') == 'mail_cfg_saved' %}
+    <div class="alert alert-success" role="alert">Mail sender/app-key settings saved successfully.</div>
+    {% elif request.args.get('alert') == 'mail_cfg_invalid' %}
+    <div class="alert alert-danger" role="alert">Mail settings invalid. Sender mail and app key are required.</div>
     {% endif %}
     <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item">
@@ -249,6 +253,34 @@
                             {% endfor %}
                         </select>
                         <button type="submit" class="btn btn-outline-danger btn-sm w-100">Delete User</button>
+                    </form>
+                </div>
+                <div class="col-md-5 border p-3 rounded shadow-sm mt-3">
+                    <h5><i class="bi bi-envelope-fill text-danger"></i> Mail Settings (Sender + App Key)</h5>
+                    <form action="/save_mail_config" method="POST" class="row g-2">
+                        <div class="col-md-6">
+                            <input type="email" name="sender_email" class="form-control" placeholder="Sender Email"
+                                   value="{{ mail_cfg.sender_email if mail_cfg else '' }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="password" name="app_key" class="form-control" placeholder="App Key" required>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" name="default_to" class="form-control"
+                                   placeholder="Default To (comma-separated emails)"
+                                   value="{{ mail_cfg.default_to if mail_cfg and mail_cfg.default_to else '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="text" name="smtp_host" class="form-control" placeholder="SMTP Host"
+                                   value="{{ mail_cfg.smtp_host if mail_cfg else 'smtp.zoho.com' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="number" name="smtp_port" class="form-control" placeholder="SMTP Port"
+                                   value="{{ mail_cfg.smtp_port if mail_cfg else 465 }}">
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-danger btn-sm">Save Mail Settings</button>
+                        </div>
                     </form>
                 </div>
             </div>
