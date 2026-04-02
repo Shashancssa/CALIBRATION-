@@ -1,18 +1,25 @@
 import os
 import smtplib
+import sys
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import datetime as dt_module
 from email.message import EmailMessage
 from flask import Flask, render_template, request, redirect, url_for, session, make_response
 from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
 
-app = Flask(__name__)
+BASE_DIR = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'))
 app.secret_key = "kaynes_ff_qam_42_final"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///calibration_master.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+
+def _normalize_header(header):
+    """Normalize uploaded sheet headers for resilient column mapping."""
+    return ''.join(ch.lower() for ch in str(header) if ch.isalnum())
 
 # --- DATABASE MODEL (MAINTAINING YOUR 21 COLUMNS) ---
 class CalibrationMaster(db.Model):
@@ -80,21 +87,21 @@ def check_alerts():
         EMAIL_ADDR = "shashank.c@kaynestechnology.net"
         EMAIL_PASS = "PKXbWyCKWPJF"
         msg = EmailMessage()
-        msg['From'] = f"Calibration System <{EMAIL_ADDR}>"
+        msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
         msg['To'] = "shashank.c@kaynestechnology.net"
         msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
 
-        body = "KAYNES TECHNOLOGY - CALIBRATION ALERT\n" + "="*40 + "\n"
+        body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
         if items_15:
             body += "\n🔴 15 DAYS LEFT:\n"
             for i in items_15:
                 days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
         if items_30:
             body += "\n🟡 30 DAYS LEFT:\n"
             for i in items_30:
                 days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
 
         msg.set_content(body)
         try:
@@ -110,7 +117,7 @@ def send_test_email(subject, body):
     EMAIL_ADDR = "shashank.c@kaynestechnology.net"
     EMAIL_PASS = "Kt8AWJB95FPa"  # put the app-specific password here
     msg = EmailMessage()
-    msg['From'] = f"Calibration System <{EMAIL_ADDR}>"
+    msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
     msg['To'] = "shashank.c@kaynestechnology.net"
     msg['Subject'] = subject
     msg.set_content(body)
@@ -150,11 +157,40 @@ def download_master():
     today = date.today()
     data = []
     for item in items:
-        row = item.to_dict()
-        if item.c20_due_date:
-            row['Days Left'] = (item.c20_due_date - today).days
+        days_left = (item.c20_due_date - today).days if item.c20_due_date else None
+        if days_left is None:
+            status = 'N/A'
+        elif days_left <= 15:
+            status = '15D'
+        elif days_left <= 30:
+            status = '30D'
         else:
-            row['Days Left'] = 'N/A'
+            status = 'OK'
+
+        row = {
+            "Sl. No": item.c1_sl_no or "",
+            "Kaynes Asset ID": item.c2_asset_id or "",
+            "Name of Eqpmt.": item.c3_eq_name or "",
+            "Make": item.c4_make or "",
+            "Model No.": item.c5_model_no or "",
+            "Equipment Sl No": item.c6_eq_sl_no or "",
+            "Range": item.c7_range or "",
+            "Accuracy": item.c8_accuracy or "",
+            "Acceptance Criteria": item.c9_acceptance_criteria or "",
+            "Application": item.c10_application or "",
+            "Parameter": item.c11_parameter or "",
+            "Owner": item.c12_owner or "",
+            "Location (Line Name)": item.c13_location or "",
+            "Calibration Agency": item.c14_cal_agency or "",
+            "Type of Agency (NABL Lab, Internal, Traceable to NABL Lab, Authorized Service Provider)": item.c15_is_nabl or "",
+            "Calibration or Verification method (External / Internal / Onsite / Verification)": item.c16_verif_method or "",
+            "Calibration Procedure Reference": item.c21_remarks or "",
+            "Calibration Frequency": item.c17_frequency or "",
+            "Calibration Certificate No.": item.c18_cert_no or "",
+            "Calibration Date": item.c19_cal_date.strftime('%Y-%m-%d') if item.c19_cal_date else "",
+            "Due Date": item.c20_due_date.strftime('%Y-%m-%d') if item.c20_due_date else "",
+            "Status": status
+        }
         data.append(row)
     df = pd.DataFrame(data)
     csv_data = df.to_csv(index=False)
@@ -211,6 +247,104 @@ def manage_record():
     db.session.commit()
     return redirect(url_for('index'))
 
+
+@app.route('/upload_excel', methods=['POST'])
+def upload_excel():
+    file = request.files.get('excel_file')
+    if not file or file.filename == '':
+        return redirect(url_for('index', alert='upload_no_file'))
+
+    try:
+        # Supports xlsx/xls (and csv as a fallback if users provide csv)
+        if file.filename.lower().endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+    except Exception as e:
+        print(f"Upload read error: {e}")
+        return redirect(url_for('index', alert='upload_read_error'))
+
+    # Map many possible header variants to existing DB fields.
+    header_map = {
+        'slno': 'c1_sl_no',
+        'serialnumber': 'c1_sl_no',
+        'kaynesassetid': 'c2_asset_id',
+        'assetid': 'c2_asset_id',
+        'nameofeqpmt': 'c3_eq_name',
+        'equipname': 'c3_eq_name',
+        'equipmentname': 'c3_eq_name',
+        'make': 'c4_make',
+        'modelno': 'c5_model_no',
+        'equipmentslno': 'c6_eq_sl_no',
+        'range': 'c7_range',
+        'accuracy': 'c8_accuracy',
+        'acceptancecriteria': 'c9_acceptance_criteria',
+        'application': 'c10_application',
+        'parameter': 'c11_parameter',
+        'owner': 'c12_owner',
+        'locationlinename': 'c13_location',
+        'location': 'c13_location',
+        'calibrationagency': 'c14_cal_agency',
+        'typeofagencynabllabinternaltraceabletonabllabauthorizedserviceprovider': 'c15_is_nabl',
+        'typeofagency': 'c15_is_nabl',
+        'calibrationorverificationmethodexternalinternalonsiteverification': 'c16_verif_method',
+        'calibrationorverificationmethod': 'c16_verif_method',
+        'calibrationprocedurereference': 'c21_remarks',
+        'calibrationfrequency': 'c17_frequency',
+        'calibrationcertificateno': 'c18_cert_no',
+        'calibrationdate': 'c19_cal_date',
+        'duedate': 'c20_due_date',
+    }
+
+    resolved_columns = {}
+    for col in df.columns:
+        key = _normalize_header(col)
+        mapped = header_map.get(key)
+        if mapped:
+            resolved_columns[col] = mapped
+
+    # Require at least Asset ID to upsert records
+    if 'c2_asset_id' not in resolved_columns.values():
+        return redirect(url_for('index', alert='upload_missing_asset'))
+
+    upserted = 0
+    for _, row in df.iterrows():
+        row_data = {}
+        for src_col, model_col in resolved_columns.items():
+            value = row.get(src_col)
+            if pd.isna(value):
+                continue
+            row_data[model_col] = value
+
+        asset_id = str(row_data.get('c2_asset_id', '')).strip()
+        if not asset_id:
+            continue
+
+        item = CalibrationMaster.query.filter_by(c2_asset_id=asset_id).first() or CalibrationMaster(c2_asset_id=asset_id)
+
+        for field, value in row_data.items():
+            if field in ('c19_cal_date', 'c20_due_date'):
+                parsed = None
+                if isinstance(value, (datetime, pd.Timestamp)):
+                    parsed = value.date()
+                else:
+                    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y'):
+                        try:
+                            parsed = datetime.strptime(str(value).strip(), fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                if parsed:
+                    setattr(item, field, parsed)
+            else:
+                setattr(item, field, str(value).strip())
+
+        db.session.add(item)
+        upserted += 1
+
+    db.session.commit()
+    return redirect(url_for('index', alert='upload_success', count=upserted))
+
 @app.route('/manual_alert')
 def manual_alert():
     alert_sent = check_alerts()
@@ -229,4 +363,6 @@ def delete_record(item_id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True, use_reloader=False)
+    host = os.getenv("FLASK_HOST", "0.0.0.0")
+    port = int(os.getenv("FLASK_PORT", "5000"))
+    app.run(host=host, port=port, debug=True, use_reloader=False)
