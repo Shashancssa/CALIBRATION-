@@ -6,8 +6,12 @@ def send_mail_alert(equipment_list):
     if not equipment_list:
         return
 
-    EMAIL_ADDR = os.getenv("shashank.c@kaynestechnology.net")
-    EMAIL_PASS = os.getenv("Kt8AWJB95FPa")
+    EMAIL_ADDR = os.getenv("EMAIL_ADDR")
+    EMAIL_PASS = os.getenv("EMAIL_PASS")
+
+
+    if not EMAIL_ADDR or not EMAIL_PASS:
+        raise ValueError("EMAIL_ADDR and EMAIL_PASS environment variables must be set")
 
     msg = EmailMessage()
     msg['Subject'] = "🚨 KAYNES : Calibration Alert"
