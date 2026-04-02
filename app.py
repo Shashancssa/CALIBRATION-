@@ -14,6 +14,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///calibration_master.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+
+def _normalize_header(header):
+    """Normalize uploaded sheet headers for resilient column mapping."""
+    return ''.join(ch.lower() for ch in str(header) if ch.isalnum())
+
 # --- DATABASE MODEL (MAINTAINING YOUR 21 COLUMNS) ---
 class CalibrationMaster(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -210,6 +215,104 @@ def manage_record():
     db.session.add(item)
     db.session.commit()
     return redirect(url_for('index'))
+
+
+@app.route('/upload_excel', methods=['POST'])
+def upload_excel():
+    file = request.files.get('excel_file')
+    if not file or file.filename == '':
+        return redirect(url_for('index', alert='upload_no_file'))
+
+    try:
+        # Supports xlsx/xls (and csv as a fallback if users provide csv)
+        if file.filename.lower().endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+    except Exception as e:
+        print(f"Upload read error: {e}")
+        return redirect(url_for('index', alert='upload_read_error'))
+
+    # Map many possible header variants to existing DB fields.
+    header_map = {
+        'slno': 'c1_sl_no',
+        'serialnumber': 'c1_sl_no',
+        'kaynesassetid': 'c2_asset_id',
+        'assetid': 'c2_asset_id',
+        'nameofeqpmt': 'c3_eq_name',
+        'equipname': 'c3_eq_name',
+        'equipmentname': 'c3_eq_name',
+        'make': 'c4_make',
+        'modelno': 'c5_model_no',
+        'equipmentslno': 'c6_eq_sl_no',
+        'range': 'c7_range',
+        'accuracy': 'c8_accuracy',
+        'acceptancecriteria': 'c9_acceptance_criteria',
+        'application': 'c10_application',
+        'parameter': 'c11_parameter',
+        'owner': 'c12_owner',
+        'locationlinename': 'c13_location',
+        'location': 'c13_location',
+        'calibrationagency': 'c14_cal_agency',
+        'typeofagencynabllabinternaltraceabletonabllabauthorizedserviceprovider': 'c15_is_nabl',
+        'typeofagency': 'c15_is_nabl',
+        'calibrationorverificationmethodexternalinternalonsiteverification': 'c16_verif_method',
+        'calibrationorverificationmethod': 'c16_verif_method',
+        'calibrationprocedurereference': 'c21_remarks',
+        'calibrationfrequency': 'c17_frequency',
+        'calibrationcertificateno': 'c18_cert_no',
+        'calibrationdate': 'c19_cal_date',
+        'duedate': 'c20_due_date',
+    }
+
+    resolved_columns = {}
+    for col in df.columns:
+        key = _normalize_header(col)
+        mapped = header_map.get(key)
+        if mapped:
+            resolved_columns[col] = mapped
+
+    # Require at least Asset ID to upsert records
+    if 'c2_asset_id' not in resolved_columns.values():
+        return redirect(url_for('index', alert='upload_missing_asset'))
+
+    upserted = 0
+    for _, row in df.iterrows():
+        row_data = {}
+        for src_col, model_col in resolved_columns.items():
+            value = row.get(src_col)
+            if pd.isna(value):
+                continue
+            row_data[model_col] = value
+
+        asset_id = str(row_data.get('c2_asset_id', '')).strip()
+        if not asset_id:
+            continue
+
+        item = CalibrationMaster.query.filter_by(c2_asset_id=asset_id).first() or CalibrationMaster(c2_asset_id=asset_id)
+
+        for field, value in row_data.items():
+            if field in ('c19_cal_date', 'c20_due_date'):
+                parsed = None
+                if isinstance(value, (datetime, pd.Timestamp)):
+                    parsed = value.date()
+                else:
+                    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y'):
+                        try:
+                            parsed = datetime.strptime(str(value).strip(), fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                if parsed:
+                    setattr(item, field, parsed)
+            else:
+                setattr(item, field, str(value).strip())
+
+        db.session.add(item)
+        upserted += 1
+
+    db.session.commit()
+    return redirect(url_for('index', alert='upload_success', count=upserted))
 
 @app.route('/manual_alert')
 def manual_alert():

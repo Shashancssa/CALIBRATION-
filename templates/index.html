@@ -46,6 +46,14 @@
     <div class="alert alert-info" role="alert">No items due in 15/30 days; no alert sent.</div>
     {% elif request.args.get('alert') == 'deleted' %}
     <div class="alert alert-warning" role="alert">Record deleted successfully.</div>
+    {% elif request.args.get('alert') == 'upload_success' %}
+    <div class="alert alert-success" role="alert">Excel uploaded successfully. Updated records: {{ request.args.get('count', 0) }}.</div>
+    {% elif request.args.get('alert') == 'upload_no_file' %}
+    <div class="alert alert-danger" role="alert">Please select an Excel file before uploading.</div>
+    {% elif request.args.get('alert') == 'upload_read_error' %}
+    <div class="alert alert-danger" role="alert">Unable to read the uploaded file. Please upload a valid Excel/CSV file.</div>
+    {% elif request.args.get('alert') == 'upload_missing_asset' %}
+    <div class="alert alert-danger" role="alert">Upload failed: column “Kaynes Asset ID” (or Asset ID) is required.</div>
     {% endif %}
     <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item">
