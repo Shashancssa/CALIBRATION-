@@ -66,27 +66,27 @@
                 <table class="table table-hover table-bordered table-xs">
                     <thead class="sticky-header">
                         <tr>
-                            <th>Serial Number</th>
-                            <th>Asset ID</th>
-                            <th>Equipment Name</th>
+                            <th>Sl. No</th>
+                            <th>Kaynes Asset ID</th>
+                            <th>Name of Eqpmt.</th>
                             <th>Make</th>
-                            <th>Model No</th>
-                            <th>Equipment SL No</th>
+                            <th>Model No.</th>
+                            <th>Equipment Sl No</th>
                             <th>Range</th>
                             <th>Accuracy</th>
                             <th>Acceptance Criteria</th>
                             <th>Application</th>
                             <th>Parameter</th>
                             <th>Owner</th>
-                            <th>Location</th>
+                            <th>Location (Line Name)</th>
                             <th>Calibration Agency</th>
-                            <th>NABL</th>
-                            <th>Verification Method</th>
-                            <th>Frequency</th>
-                            <th>Certificate No</th>
+                            <th>Type of Agency (NABL Lab, Internal, Traceable to NABL Lab, Authorized Service Provider)</th>
+                            <th>Calibration or Verification method (External / Internal / Onsite / Verification)</th>
+                            <th>Calibration Procedure Reference</th>
+                            <th>Calibration Frequency</th>
+                            <th>Calibration Certificate No.</th>
                             <th>Calibration Date</th>
                             <th>Due Date</th>
-                            <th>Days Left</th>
                             <th>Status</th>
                             <th>Action</th>
                         </tr>
@@ -96,7 +96,7 @@
                         {% set days = (item.c20_due_date - today).days if item.c20_due_date else 999 %}
                         <tr class="{% if days <= 15 %}due-15{% elif days <= 30 %}due-30{% endif %}">
                             <td>{{ item.c1_sl_no }}</td>
-                            <td><strong>{{ item.c2_asset_id }}</strong> <small class="text-muted">({{ days if days != 999 else 'N/A' }} days)</small></td>
+                            <td><strong>{{ item.c2_asset_id }}</strong></td>
                             <td>{{ item.c3_eq_name }}</td>
                             <td>{{ item.c4_make }}</td>
                             <td>{{ item.c5_model_no }}</td>
@@ -111,11 +111,11 @@
                             <td>{{ item.c14_cal_agency }}</td>
                             <td>{{ item.c15_is_nabl }}</td>
                             <td>{{ item.c16_verif_method }}</td>
+                            <td>{{ item.c21_remarks }}</td>
                             <td>{{ item.c17_frequency }}</td>
                             <td>{{ item.c18_cert_no }}</td>
                             <td>{{ item.c19_cal_date }}</td>
                             <td>{{ item.c20_due_date }}</td>
-                            <td>{{ days if days != 999 else 'N/A' }}</td>
                             <td class="text-center">
                                 {% if days <= 15 %}
                                     <span class="badge bg-danger"><i class="bi bi-fire"></i> 15D</span>
@@ -138,32 +138,32 @@
 
         <div class="tab-pane fade" id="addEdit">
             <form action="/manage_record" method="POST" id="dataForm" class="row g-2">
-                <div class="col-md-2"><label class="small">Sl No (C1)</label><input type="text" name="c1_sl_no" id="c1" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Asset ID (C2)*</label><input type="text" name="c2_asset_id" id="c2" class="form-control form-control-sm" required></div>
-                <div class="col-md-4"><label class="small">Eq Name (C3)</label><input type="text" name="c3_eq_name" id="c3" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Make (C4)</label><input type="text" name="c4_make" id="c4" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="small">Sl. No</label><input type="text" name="c1_sl_no" id="c1" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Kaynes Asset ID *</label><input type="text" name="c2_asset_id" id="c2" class="form-control form-control-sm" required></div>
+                <div class="col-md-4"><label class="small">Name of Eqpmt.</label><input type="text" name="c3_eq_name" id="c3" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Make</label><input type="text" name="c4_make" id="c4" class="form-control form-control-sm"></div>
                 
-                <div class="col-md-3"><label class="small">Model (C5)</label><input type="text" name="c5_model_no" id="c5" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Eq Sl No (C6)</label><input type="text" name="c6_eq_sl_no" id="c6" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Range (C7)</label><input type="text" name="c7_range" id="c7" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Accuracy (C8)</label><input type="text" name="c8_accuracy" id="c8" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Model No.</label><input type="text" name="c5_model_no" id="c5" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Equipment Sl No</label><input type="text" name="c6_eq_sl_no" id="c6" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Range</label><input type="text" name="c7_range" id="c7" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Accuracy</label><input type="text" name="c8_accuracy" id="c8" class="form-control form-control-sm"></div>
 
-                <div class="col-md-4"><label class="small">Criteria (C9)</label><input type="text" name="c9_acceptance_criteria" id="c9" class="form-control form-control-sm"></div>
-                <div class="col-md-4"><label class="small">Application (C10)</label><input type="text" name="c10_application" id="c10" class="form-control form-control-sm"></div>
-                <div class="col-md-4"><label class="small">Parameter (C11)</label><input type="text" name="c11_parameter" id="c11" class="form-control form-control-sm"></div>
+                <div class="col-md-4"><label class="small">Acceptance Criteria</label><input type="text" name="c9_acceptance_criteria" id="c9" class="form-control form-control-sm"></div>
+                <div class="col-md-4"><label class="small">Application</label><input type="text" name="c10_application" id="c10" class="form-control form-control-sm"></div>
+                <div class="col-md-4"><label class="small">Parameter</label><input type="text" name="c11_parameter" id="c11" class="form-control form-control-sm"></div>
 
-                <div class="col-md-3"><label class="small">Owner (C12)</label><input type="text" name="c12_owner" id="c12" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Location (C13)</label><input type="text" name="c13_location" id="c13" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Agency (C14)</label><input type="text" name="c14_cal_agency" id="c14" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">NABL (C15)</label><input type="text" name="c15_is_nabl" id="c15" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Owner</label><input type="text" name="c12_owner" id="c12" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Location (Line Name)</label><input type="text" name="c13_location" id="c13" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Calibration Agency</label><input type="text" name="c14_cal_agency" id="c14" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Type of Agency (NABL/Internal/Traceable/ASP)</label><input type="text" name="c15_is_nabl" id="c15" class="form-control form-control-sm"></div>
 
-                <div class="col-md-4"><label class="small">Verif Method (C16)</label><input type="text" name="c16_verif_method" id="c16" class="form-control form-control-sm"></div>
-                <div class="col-md-2"><label class="small">Freq (C17)</label><input type="text" name="c17_frequency" id="c17" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Cert No (C18)</label><input type="text" name="c18_cert_no" id="c18" class="form-control form-control-sm"></div>
+                <div class="col-md-4"><label class="small">Calibration/Verification Method (External/Internal/Onsite/Verification)</label><input type="text" name="c16_verif_method" id="c16" class="form-control form-control-sm"></div>
+                <div class="col-md-4"><label class="small">Calibration Procedure Reference</label><input type="text" name="c21_remarks" id="c21" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="small">Calibration Frequency</label><input type="text" name="c17_frequency" id="c17" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="small">Calibration Certificate No.</label><input type="text" name="c18_cert_no" id="c18" class="form-control form-control-sm"></div>
 
-                <div class="col-md-3"><label class="small">Cal Date (C19)</label><input type="date" name="c19_cal_date" id="c19" class="form-control form-control-sm"></div>
-                <div class="col-md-3"><label class="small">Due Date (C20)</label><input type="date" name="c20_due_date" id="c20" class="form-control form-control-sm"></div>
-                <div class="col-md-6"><label class="small">Remarks (C21)</label><input type="text" name="c21_remarks" id="c21" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Calibration Date</label><input type="date" name="c19_cal_date" id="c19" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="small">Due Date</label><input type="date" name="c20_due_date" id="c20" class="form-control form-control-sm"></div>
                 
                 <div class="col-12 mt-3">
                     <button type="submit" class="btn btn-success"><i class="bi bi-save2"></i> Save Changes</button>
