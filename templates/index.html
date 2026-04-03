@@ -93,27 +93,6 @@
     <div class="alert alert-danger" role="alert">Mail settings invalid. Sender mail and app key are required.</div>
     {% endif %}
 
-    <div class="card shadow-sm border-0 mb-3">
-        <div class="card-body">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h6 class="mb-1"><i class="bi bi-graph-up-arrow"></i> Due Status Overview</h6>
-                    <p class="mb-1">Due Percentage (<=30 days): <strong>{{ due_percentage }}%</strong></p>
-                    <div class="small text-muted">
-                        Total with Due Date: {{ total_with_due }} |
-                        Due <=30 Days: {{ due_30_count }} |
-                        Due <=15 Days: {{ due_15_count }} |
-                        Overdue: {{ overdue_count }} |
-                        Not Due (>30 Days): {{ not_due_count }}
-                    </div>
-                </div>
-                <div class="col-md-4 mt-3 mt-md-0">
-                    <canvas id="dueChart" height="140"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item">
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#view"><i class="bi bi-table"></i> Master View</button>
@@ -126,6 +105,9 @@
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#admin"><i class="bi bi-shield-lock"></i> Admin & Upload</button>
         </li>
         {% endif %}
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#statistics"><i class="bi bi-pie-chart-fill"></i> Statistics</button>
+        </li>
     </ul>
 
     <div class="tab-content border bg-white p-3 shadow-sm">
@@ -319,6 +301,29 @@
                             <button type="submit" class="btn btn-danger btn-sm">Save Mail Settings</button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="statistics">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h5 class="mb-2"><i class="bi bi-graph-up-arrow"></i> Due Status Overview</h5>
+                            <p class="mb-2">Due Percentage (<=30 days): <strong>{{ due_percentage }}%</strong></p>
+                            <div class="small text-muted">
+                                Total with Due Date: {{ total_with_due }} |
+                                Due <=30 Days: {{ due_30_count }} |
+                                Due <=15 Days: {{ due_15_count }} |
+                                Overdue: {{ overdue_count }} |
+                                Not Due (>30 Days): {{ not_due_count }}
+                            </div>
+                        </div>
+                        <div class="col-md-4 mt-3 mt-md-0">
+                            <canvas id="dueChart" height="160"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
