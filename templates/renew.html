@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <link rel="icon" href="{{ url_for('static', filename='images/site-icon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ url_for('static', filename='images/site-icon.png') }}" type="image/png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            background: url("{{ url_for('static', filename='images/site-bg.svg') }}") center center / cover no-repeat fixed;
+            background: url("{{ url_for('static', filename='images/background-image.jpg') }}") center center / cover no-repeat fixed;
             min-height: 100vh;
         }
-        .site-icon {
+        .top-center-icon {
             position: fixed;
             top: 8px;
-            left: 8px;
-            width: 15mm;
-            height: 15mm;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 6mm;
+            height: 6mm;
             z-index: 1100;
             object-fit: contain;
         }
     </style>
 </head>
 <body class="bg-light p-5">
-    <img src="{{ url_for('static', filename='images/site-icon.svg') }}" alt="Site Icon" class="site-icon">
+    <img src="{{ url_for('static', filename='images/site-icon.png') }}" alt="Site Icon" class="top-center-icon">
     <div class="container" style="max-width: 500px;">
         <div class="card p-4 shadow-sm border-0" style="border-radius: 15px;">
             <h4 class="text-danger">Update Record</h4>
