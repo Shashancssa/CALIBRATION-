@@ -220,8 +220,11 @@ def send_test_email_route():
 from zoneinfo import ZoneInfo
 
 scheduler = BackgroundScheduler(timezone=ZoneInfo('Asia/Kolkata'))
-# Run task at 9:00 AM local time every day
-scheduler.add_job(func=check_alerts, trigger="cron", hour=9, minute=0)
+# Run task daily at configured local time.
+# Defaults: 09:00 (9:00 AM). Override with AUTO_MAIL_HOUR / AUTO_MAIL_MINUTE env vars.
+AUTO_MAIL_HOUR = int(os.getenv('AUTO_MAIL_HOUR', '9'))
+AUTO_MAIL_MINUTE = int(os.getenv('AUTO_MAIL_MINUTE', '0'))
+scheduler.add_job(func=check_alerts, trigger="cron", hour=AUTO_MAIL_HOUR, minute=AUTO_MAIL_MINUTE)
 scheduler.start()
 
 @app.route('/login', methods=['GET', 'POST'])
