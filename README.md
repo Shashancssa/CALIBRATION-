@@ -9,7 +9,7 @@ CALIBRATION
    ```
 2. Build executable from project root:
    ```bash
-   pyinstaller --onefile --add-data "templates;templates" app.py --name "Kaynes calibration maste"
+   pyinstaller --onefile --add-data "templates;templates" --add-data "static;static" app.py --name "Kaynes calibration maste"
    ```
 3. EXE output path:
    - `dist/Kaynes calibration maste.exe`

@@ -11,7 +11,11 @@ from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
 
 BASE_DIR = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
 app.secret_key = "kaynes_ff_qam_42_final"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///calibration_master.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
