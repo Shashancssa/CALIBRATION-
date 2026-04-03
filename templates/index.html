@@ -7,6 +7,7 @@
     <link rel="icon" href="{{ url_for('static', filename='images/site-icon.png') }}" type="image/png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <style>
         body {
@@ -91,6 +92,28 @@
     {% elif request.args.get('alert') == 'mail_cfg_invalid' %}
     <div class="alert alert-danger" role="alert">Mail settings invalid. Sender mail and app key are required.</div>
     {% endif %}
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h6 class="mb-1"><i class="bi bi-graph-up-arrow"></i> Due Status Overview</h6>
+                    <p class="mb-1">Due Percentage (<=30 days): <strong>{{ due_percentage }}%</strong></p>
+                    <div class="small text-muted">
+                        Total with Due Date: {{ total_with_due }} |
+                        Due <=30 Days: {{ due_30_count }} |
+                        Due <=15 Days: {{ due_15_count }} |
+                        Overdue: {{ overdue_count }} |
+                        Not Due (>30 Days): {{ not_due_count }}
+                    </div>
+                </div>
+                <div class="col-md-4 mt-3 mt-md-0">
+                    <canvas id="dueChart" height="140"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item">
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#view"><i class="bi bi-table"></i> Master View</button>
@@ -357,6 +380,28 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         hideLoading();
+
+        const chartCanvas = document.getElementById('dueChart');
+        if (chartCanvas) {
+            new Chart(chartCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Due <=30 Days', 'Not Due (>30 Days)'],
+                    datasets: [{
+                        data: [{{ due_30_count }}, {{ not_due_count }}],
+                        backgroundColor: ['#dc3545', '#198754'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
 
         var dataForm = document.getElementById('dataForm');
         if (dataForm) {

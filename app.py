@@ -251,17 +251,45 @@ def logout():
 @login_required
 def index():
     items = CalibrationMaster.query.all()
+    today = datetime.now().date()
+    total_with_due = 0
+    due_30_count = 0
+    due_15_count = 0
+    not_due_count = 0
+    overdue_count = 0
+    for item in items:
+        if not item.c20_due_date:
+            continue
+        total_with_due += 1
+        days_left = (item.c20_due_date - today).days
+        if days_left < 0:
+            overdue_count += 1
+        if days_left <= 15:
+            due_15_count += 1
+            due_30_count += 1
+        elif days_left <= 30:
+            due_30_count += 1
+        else:
+            not_due_count += 1
+    due_percentage = round((due_30_count / total_with_due) * 100, 2) if total_with_due else 0
+
     users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
     location_mails = LocationEmail.query.order_by(LocationEmail.location.asc()).all() if session.get('role') == 'admin' else []
     mail_cfg = get_mail_config() if session.get('role') == 'admin' else None
     return render_template(
         'index.html',
         items=items,
-        today=datetime.now().date(),
+        today=today,
         current_role=session.get('role', 'user'),
         users=users,
         location_mails=location_mails,
-        mail_cfg=mail_cfg
+        mail_cfg=mail_cfg,
+        total_with_due=total_with_due,
+        due_30_count=due_30_count,
+        due_15_count=due_15_count,
+        not_due_count=not_due_count,
+        overdue_count=overdue_count,
+        due_percentage=due_percentage
     )
 
 @app.route('/download_master')
