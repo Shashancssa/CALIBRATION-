@@ -126,7 +126,6 @@ def check_alerts():
     with app.app_context():
         today = datetime.now().date()
         t30 = today + timedelta(days=30)
-        t15 = today + timedelta(days=15)
 
         # Include items due in the past 30 days too (overdue counts as immediate alert)
         all_due = CalibrationMaster.query.filter(CalibrationMaster.c20_due_date <= t30).all()
@@ -149,41 +148,48 @@ def check_alerts():
 
         EMAIL_ADDR = mail_cfg.sender_email
         EMAIL_PASS = mail_cfg.app_key
-        msg = EmailMessage()
-        msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
-        location_mail_map = {m.location.strip().lower(): m.email for m in LocationEmail.query.all() if m.location and m.email}
-        recipients = set()
+        location_mail_map = {
+            m.location.strip().lower(): [x.strip() for x in m.email.split(',') if x.strip()]
+            for m in LocationEmail.query.all() if m.location and m.email
+        }
+
+        grouped_due_items = {}
         for due_item in (items_15 + items_30):
-            key = (due_item.c13_location or '').strip().lower()
-            if key and key in location_mail_map:
-                recipients.add(location_mail_map[key])
-        if not recipients:
-            if mail_cfg.default_to:
-                recipients.update([x.strip() for x in mail_cfg.default_to.split(',') if x.strip()])
-            else:
-                recipients.add(EMAIL_ADDR)
+            key = (due_item.c13_location or '').strip().lower() or "__unmapped__"
+            grouped_due_items.setdefault(key, []).append(due_item)
 
-        msg['To'] = ", ".join(sorted(recipients))
-        msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
-
-        body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
-        if items_15:
-            body += "\n🔴 15 DAYS LEFT:\n"
-            for i in items_15:
-                days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
-        if items_30:
-            body += "\n🟡 30 DAYS LEFT:\n"
-            for i in items_30:
-                days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
-
-        msg.set_content(body)
+        default_recipients = [x.strip() for x in (mail_cfg.default_to or '').split(',') if x.strip()] or [EMAIL_ADDR]
+        sent_any = False
         try:
             with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
                 server.login(EMAIL_ADDR, EMAIL_PASS)
-                server.send_message(msg)
-            return True
+                for location_key, location_items in grouped_due_items.items():
+                    recipients = location_mail_map.get(location_key) or default_recipients
+                    msg = EmailMessage()
+                    msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
+                    msg['To'] = ", ".join(sorted(set(recipients)))
+                    location_title = location_items[0].c13_location if location_items[0].c13_location else "Unmapped Location"
+                    msg['Subject'] = f"🚨 Calibration Alert ({location_title}): 15/30-Day Items"
+
+                    body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
+                    body += f"\nLocation: {location_title}\n"
+                    items_15_loc = [i for i in location_items if (i.c20_due_date - today).days <= 15]
+                    items_30_loc = [i for i in location_items if 15 < (i.c20_due_date - today).days <= 30]
+                    if items_15_loc:
+                        body += "\n🟡 15 DAYS LEFT:\n"
+                        for i in items_15_loc:
+                            days = (i.c20_due_date - today).days
+                            body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                    if items_30_loc:
+                        body += "\n🔵 30 DAYS LEFT:\n"
+                        for i in items_30_loc:
+                            days = (i.c20_due_date - today).days
+                            body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+
+                    msg.set_content(body)
+                    server.send_message(msg)
+                    sent_any = True
+            return sent_any
         except Exception as e:
             print(f"Mail Error: {e}")
             return False
