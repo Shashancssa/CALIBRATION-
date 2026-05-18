@@ -301,6 +301,21 @@
                             <button type="submit" class="btn btn-danger btn-sm">Save Mail Settings</button>
                         </div>
                     </form>
+                    <hr>
+                    <h6><i class="bi bi-alarm-fill text-primary"></i> Auto Alert Scheduler</h6>
+                    <form action="/save_scheduler_config" method="POST" class="row g-2">
+                        <div class="col-md-6">
+                            <input type="number" name="hour" class="form-control" min="0" max="23" placeholder="Hour (0-23)"
+                                   value="{{ scheduler_cfg.hour if scheduler_cfg else 9 }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="number" name="minute" class="form-control" min="0" max="59" placeholder="Minute (0-59)"
+                                   value="{{ scheduler_cfg.minute if scheduler_cfg else 0 }}" required>
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary btn-sm">Save Scheduler Time</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
