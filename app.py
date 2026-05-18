@@ -176,6 +176,10 @@ def check_alerts():
                 server.login(EMAIL_ADDR, EMAIL_PASS)
                 for location_key, location_items in grouped_due_items.items():
                     recipients = location_mail_map.get(location_key) or default_recipients
+                    # Sender should receive only the consolidated summary mail, not location-wise mails.
+                    recipients = [r for r in recipients if r.strip().lower() != EMAIL_ADDR.strip().lower()]
+                    if not recipients:
+                        continue
                     msg = EmailMessage()
                     msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
                     msg['To'] = ", ".join(sorted(set(recipients)))
