@@ -26,8 +26,8 @@
         }
         .table-xs td, .table-xs th { font-size: 0.75rem; padding: 0.3rem; vertical-align: middle; }
         .sticky-header { position: sticky; top: 0; background: #343a40; color: white; z-index: 10; }
-        .due-15 { background-color: #f8d7da !important; } /* Light Red */
-        .due-30 { background-color: #fff3cd !important; } /* Light Yellow */
+        .due-15 { background-color: #fff3cd !important; } /* Yellow */
+        .due-30 { background-color: #cfe2ff !important; } /* Blue */
         .table-responsive { max-height: 70vh; overflow-y: auto; }
     </style>
 </head>
@@ -169,9 +169,9 @@
                             <td>{{ item.c20_due_date }}</td>
                             <td class="text-center">
                                 {% if days <= 15 %}
-                                    <span class="badge bg-danger"><i class="bi bi-fire"></i> 15D</span>
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-fire"></i> 15D</span>
                                 {% elif days <= 30 %}
-                                    <span class="badge bg-warning text-dark"><i class="bi bi-clock-history"></i> 30D</span>
+                                    <span class="badge bg-primary"><i class="bi bi-clock-history"></i> 30D</span>
                                 {% else %}
                                     <span class="badge bg-success"><i class="bi bi-check-lg"></i> OK</span>
                                 {% endif %}
