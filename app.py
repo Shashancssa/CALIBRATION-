@@ -92,6 +92,13 @@ class MailConfig(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
 
+class SchedulerConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    hour = db.Column(db.Integer, nullable=False, default=9)
+    minute = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+
+
 def initialize_defaults():
     if not UserAccount.query.filter_by(username='admin').first():
         db.session.add(UserAccount(username='admin', password='admin123', role='admin'))
@@ -102,6 +109,10 @@ def initialize_defaults():
 
 def get_mail_config():
     return MailConfig.query.filter_by(is_active=True).order_by(MailConfig.id.desc()).first()
+
+
+def get_scheduler_config():
+    return SchedulerConfig.query.filter_by(is_active=True).order_by(SchedulerConfig.id.desc()).first()
 
 
 def login_required(fn):
@@ -126,7 +137,6 @@ def check_alerts():
     with app.app_context():
         today = datetime.now().date()
         t30 = today + timedelta(days=30)
-        t15 = today + timedelta(days=15)
 
         # Include items due in the past 30 days too (overdue counts as immediate alert)
         all_due = CalibrationMaster.query.filter(CalibrationMaster.c20_due_date <= t30).all()
@@ -149,41 +159,68 @@ def check_alerts():
 
         EMAIL_ADDR = mail_cfg.sender_email
         EMAIL_PASS = mail_cfg.app_key
-        msg = EmailMessage()
-        msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
-        location_mail_map = {m.location.strip().lower(): m.email for m in LocationEmail.query.all() if m.location and m.email}
-        recipients = set()
+        location_mail_map = {
+            m.location.strip().lower(): [x.strip() for x in m.email.split(',') if x.strip()]
+            for m in LocationEmail.query.all() if m.location and m.email
+        }
+
+        grouped_due_items = {}
         for due_item in (items_15 + items_30):
-            key = (due_item.c13_location or '').strip().lower()
-            if key and key in location_mail_map:
-                recipients.add(location_mail_map[key])
-        if not recipients:
-            if mail_cfg.default_to:
-                recipients.update([x.strip() for x in mail_cfg.default_to.split(',') if x.strip()])
-            else:
-                recipients.add(EMAIL_ADDR)
+            key = (due_item.c13_location or '').strip().lower() or "__unmapped__"
+            grouped_due_items.setdefault(key, []).append(due_item)
 
-        msg['To'] = ", ".join(sorted(recipients))
-        msg['Subject'] = "🚨 Calibration Alert: 15/30-Day Items"
-
-        body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
-        if items_15:
-            body += "\n🔴 15 DAYS LEFT:\n"
-            for i in items_15:
-                days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
-        if items_30:
-            body += "\n🟡 30 DAYS LEFT:\n"
-            for i in items_30:
-                days = (i.c20_due_date - today).days
-                body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Location: {i.c13_location or 'N/A'} | Due: {i.c20_due_date} ({days} days)\n"
-
-        msg.set_content(body)
+        default_recipients = [x.strip() for x in (mail_cfg.default_to or '').split(',') if x.strip()] or [EMAIL_ADDR]
+        sent_any = False
         try:
             with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
                 server.login(EMAIL_ADDR, EMAIL_PASS)
-                server.send_message(msg)
-            return True
+                for location_key, location_items in grouped_due_items.items():
+                    recipients = location_mail_map.get(location_key) or default_recipients
+                    # Sender should receive only the consolidated summary mail, not location-wise mails.
+                    recipients = [r for r in recipients if r.strip().lower() != EMAIL_ADDR.strip().lower()]
+                    if not recipients:
+                        continue
+                    msg = EmailMessage()
+                    msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
+                    msg['To'] = ", ".join(sorted(set(recipients)))
+                    location_title = location_items[0].c13_location if location_items[0].c13_location else "Unmapped Location"
+                    msg['Subject'] = f"🚨 Calibration Alert ({location_title}): 15/30-Day Items"
+
+                    body = "KAYNES ELECTRONICS - CALIBRATION ALERT\n" + "="*40 + "\n"
+                    body += f"\nLocation: {location_title}\n"
+                    items_15_loc = [i for i in location_items if (i.c20_due_date - today).days <= 15]
+                    items_30_loc = [i for i in location_items if 15 < (i.c20_due_date - today).days <= 30]
+                    if items_15_loc:
+                        body += "\n🟡 15 DAYS LEFT:\n"
+                        for i in items_15_loc:
+                            days = (i.c20_due_date - today).days
+                            body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                    if items_30_loc:
+                        body += "\n🔵 30 DAYS LEFT:\n"
+                        for i in items_30_loc:
+                            days = (i.c20_due_date - today).days
+                            body += f"- {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+
+                    msg.set_content(body)
+                    server.send_message(msg)
+                    sent_any = True
+
+                # Sender gets one consolidated mail with all locations/items.
+                summary_msg = EmailMessage()
+                summary_msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
+                summary_msg['To'] = EMAIL_ADDR
+                summary_msg['Subject'] = "🚨 Calibration Alert Summary (All Locations)"
+                summary_body = "KAYNES ELECTRONICS - CALIBRATION ALERT SUMMARY\n" + "=" * 48 + "\n"
+                for location_items in grouped_due_items.values():
+                    location_title = location_items[0].c13_location if location_items[0].c13_location else "Unmapped Location"
+                    summary_body += f"\nLocation: {location_title}\n"
+                    for i in location_items:
+                        days = (i.c20_due_date - today).days
+                        tag = "15D" if days <= 15 else "30D"
+                        summary_body += f"- [{tag}] {i.c2_asset_id} | {i.c3_eq_name} | Due: {i.c20_due_date} ({days} days)\n"
+                summary_msg.set_content(summary_body)
+                server.send_message(summary_msg)
+            return sent_any
         except Exception as e:
             print(f"Mail Error: {e}")
             return False
@@ -228,7 +265,7 @@ scheduler = BackgroundScheduler(timezone=ZoneInfo('Asia/Kolkata'))
 # Defaults: 09:00 (9:00 AM). Override with AUTO_MAIL_HOUR / AUTO_MAIL_MINUTE env vars.
 AUTO_MAIL_HOUR = int(os.getenv('AUTO_MAIL_HOUR', '9'))
 AUTO_MAIL_MINUTE = int(os.getenv('AUTO_MAIL_MINUTE', '0'))
-scheduler.add_job(func=check_alerts, trigger="cron", hour=AUTO_MAIL_HOUR, minute=AUTO_MAIL_MINUTE)
+scheduler.add_job(func=check_alerts, trigger="cron", hour=AUTO_MAIL_HOUR, minute=AUTO_MAIL_MINUTE, id="daily_alert_job", replace_existing=True)
 scheduler.start()
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -280,6 +317,7 @@ def index():
     users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
     location_mails = LocationEmail.query.order_by(LocationEmail.location.asc()).all() if session.get('role') == 'admin' else []
     mail_cfg = get_mail_config() if session.get('role') == 'admin' else None
+    scheduler_cfg = get_scheduler_config() if session.get('role') == 'admin' else None
     return render_template(
         'index.html',
         items=items,
@@ -288,6 +326,7 @@ def index():
         users=users,
         location_mails=location_mails,
         mail_cfg=mail_cfg,
+        scheduler_cfg=scheduler_cfg,
         total_with_due=total_with_due,
         due_30_count=due_30_count,
         due_15_count=due_15_count,
@@ -590,10 +629,46 @@ def save_mail_config():
     db.session.commit()
     return redirect(url_for('index', alert='mail_cfg_saved'))
 
+
+@app.route('/save_scheduler_config', methods=['POST'])
+@login_required
+@admin_required
+def save_scheduler_config():
+    hour_raw = request.form.get('hour', '9').strip() or '9'
+    minute_raw = request.form.get('minute', '0').strip() or '0'
+    try:
+        hour = int(hour_raw)
+        minute = int(minute_raw)
+    except ValueError:
+        return redirect(url_for('index', alert='mail_cfg_invalid'))
+
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return redirect(url_for('index', alert='mail_cfg_invalid'))
+
+    cfg = get_scheduler_config() or SchedulerConfig(hour=hour, minute=minute, is_active=True)
+    cfg.hour = hour
+    cfg.minute = minute
+    cfg.is_active = True
+    db.session.add(cfg)
+    db.session.commit()
+
+    scheduler.add_job(func=check_alerts, trigger="cron", hour=hour, minute=minute, id="daily_alert_job", replace_existing=True)
+    return redirect(url_for('index', alert='mail_cfg_saved'))
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         initialize_defaults()
+        scheduler_cfg = get_scheduler_config()
+        if scheduler_cfg:
+            scheduler.add_job(
+                func=check_alerts,
+                trigger="cron",
+                hour=scheduler_cfg.hour,
+                minute=scheduler_cfg.minute,
+                id="daily_alert_job",
+                replace_existing=True
+            )
     host = os.getenv("FLASK_HOST", "0.0.0.0")
     port = int(os.getenv("FLASK_PORT", "5000"))
     app.run(host=host, port=port, debug=True, use_reloader=False)
