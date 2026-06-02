@@ -312,6 +312,7 @@ def index():
             due_30_count += 1
         else:
             not_due_count += 1
+    due_30_only_count = max(due_30_count - due_15_count, 0)
     due_percentage = round((due_30_count / total_with_due) * 100, 2) if total_with_due else 0
 
     users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
@@ -330,6 +331,7 @@ def index():
         total_with_due=total_with_due,
         due_30_count=due_30_count,
         due_15_count=due_15_count,
+        due_30_only_count=due_30_only_count,
         not_due_count=not_due_count,
         overdue_count=overdue_count,
         due_percentage=due_percentage

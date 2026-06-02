@@ -329,8 +329,8 @@
                             <p class="mb-2">Due Percentage (<=30 days): <strong>{{ due_percentage }}%</strong></p>
                             <div class="small text-muted">
                                 Total with Due Date: {{ total_with_due }} |
-                                Due <=30 Days: {{ due_30_count }} |
                                 Due <=15 Days: {{ due_15_count }} |
+                                Due 16-30 Days: {{ due_30_only_count }} |
                                 Overdue: {{ overdue_count }} |
                                 Not Due (>30 Days): {{ not_due_count }}
                             </div>
@@ -406,10 +406,10 @@
             new Chart(chartCanvas, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Due <=30 Days', 'Not Due (>30 Days)'],
+                    labels: ['Due <=15 Days', 'Due 16-30 Days', 'OK (>30 Days)'],
                     datasets: [{
-                        data: [{{ due_30_count }}, {{ not_due_count }}],
-                        backgroundColor: ['#dc3545', '#198754'],
+                        data: [{{ due_15_count }}, {{ due_30_only_count }}, {{ not_due_count }}],
+                        backgroundColor: ['#ffc107', '#0d6efd', '#198754'],
                         borderWidth: 1
                     }]
                 },
