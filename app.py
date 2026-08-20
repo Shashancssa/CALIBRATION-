@@ -26,6 +26,16 @@ def _normalize_header(header):
     """Normalize uploaded sheet headers for resilient column mapping."""
     return ''.join(ch.lower() for ch in str(header) if ch.isalnum())
 
+
+def _normalize_location(location):
+    """Normalize location names so mail mapping works despite case/space differences."""
+    return ' '.join(str(location or '').strip().lower().split())
+
+
+def _split_emails(value):
+    """Return clean comma/semicolon separated recipients."""
+    return [email.strip() for email in str(value or '').replace(';', ',').split(',') if email.strip()]
+
 # --- DATABASE MODEL (MAINTAINING YOUR 21 COLUMNS) ---
 class CalibrationMaster(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -160,22 +170,23 @@ def check_alerts():
         EMAIL_ADDR = mail_cfg.sender_email
         EMAIL_PASS = mail_cfg.app_key
         location_mail_map = {
-            m.location.strip().lower(): [x.strip() for x in m.email.split(',') if x.strip()]
-            for m in LocationEmail.query.all() if m.location and m.email
+            _normalize_location(m.location): _split_emails(m.email)
+            for m in LocationEmail.query.all() if _normalize_location(m.location) and _split_emails(m.email)
         }
 
         grouped_due_items = {}
         for due_item in (items_15 + items_30):
-            key = (due_item.c13_location or '').strip().lower() or "__unmapped__"
+            key = _normalize_location(due_item.c13_location) or "__unmapped__"
             grouped_due_items.setdefault(key, []).append(due_item)
 
-        default_recipients = [x.strip() for x in (mail_cfg.default_to or '').split(',') if x.strip()] or [EMAIL_ADDR]
+        default_recipients = _split_emails(mail_cfg.default_to) or [EMAIL_ADDR]
         sent_any = False
         try:
             with smtplib.SMTP_SSL(mail_cfg.smtp_host, mail_cfg.smtp_port) as server:
                 server.login(EMAIL_ADDR, EMAIL_PASS)
                 for location_key, location_items in grouped_due_items.items():
                     recipients = location_mail_map.get(location_key) or default_recipients
+                    print(f"Location alert: location='{location_key}', recipients={recipients}, items={len(location_items)}")
                     # Sender should receive only the consolidated summary mail, not location-wise mails.
                     recipients = [r for r in recipients if r.strip().lower() != EMAIL_ADDR.strip().lower()]
                     if not recipients:
@@ -232,7 +243,7 @@ def send_test_email(subject, body):
 
     EMAIL_ADDR = mail_cfg.sender_email
     EMAIL_PASS = mail_cfg.app_key
-    recipients = mail_cfg.default_to or EMAIL_ADDR
+    recipients = ', '.join(_split_emails(mail_cfg.default_to) or [EMAIL_ADDR])
     msg = EmailMessage()
     msg['From'] = f"Kaynes Electronics Calibration System <{EMAIL_ADDR}>"
     msg['To'] = recipients
@@ -291,7 +302,7 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    items = CalibrationMaster.query.all()
+    items = CalibrationMaster.query.order_by(CalibrationMaster.c20_due_date.is_(None), CalibrationMaster.c20_due_date.asc(), CalibrationMaster.c2_asset_id.asc()).all()
     today = datetime.now().date()
     total_with_due = 0
     due_30_count = 0
@@ -317,6 +328,7 @@ def index():
 
     users = UserAccount.query.order_by(UserAccount.username.asc()).all() if session.get('role') == 'admin' else []
     location_mails = LocationEmail.query.order_by(LocationEmail.location.asc()).all() if session.get('role') == 'admin' else []
+    location_filter_options = sorted({item.c13_location.strip() for item in items if item.c13_location and item.c13_location.strip()})
     mail_cfg = get_mail_config() if session.get('role') == 'admin' else None
     scheduler_cfg = get_scheduler_config() if session.get('role') == 'admin' else None
     return render_template(
@@ -328,6 +340,7 @@ def index():
         location_mails=location_mails,
         mail_cfg=mail_cfg,
         scheduler_cfg=scheduler_cfg,
+        location_filter_options=location_filter_options,
         total_with_due=total_with_due,
         due_30_count=due_30_count,
         due_15_count=due_15_count,
@@ -594,8 +607,13 @@ def manage_location_mail():
     if not location or not email:
         return redirect(url_for('index', alert='location_mail_invalid'))
 
-    entry = LocationEmail.query.filter_by(location=location).first() or LocationEmail(location=location)
-    entry.email = email
+    normalized_location = _normalize_location(location)
+    entry = next((m for m in LocationEmail.query.all() if _normalize_location(m.location) == normalized_location), None)
+    if not _split_emails(email):
+        return redirect(url_for('index', alert='location_mail_invalid'))
+    entry = entry or LocationEmail(location=location)
+    entry.location = location
+    entry.email = ', '.join(_split_emails(email))
     db.session.add(entry)
     db.session.commit()
     return redirect(url_for('index', alert='location_mail_saved'))
