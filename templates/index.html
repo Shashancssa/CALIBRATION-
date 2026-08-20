@@ -26,6 +26,8 @@
         }
         .table-xs td, .table-xs th { font-size: 0.75rem; padding: 0.3rem; vertical-align: middle; }
         .sticky-header { position: sticky; top: 0; background: #343a40; color: white; z-index: 10; }
+        .column-filter-row th { position: sticky; top: 42px; background: #f8f9fa; z-index: 9; }
+        .column-filter { min-width: 90px; font-size: 0.7rem; padding: 0.15rem 0.25rem; }
         .due-15 { background-color: #fff3cd !important; } /* Yellow */
         .due-30 { background-color: #cfe2ff !important; } /* Blue */
         .table-responsive { max-height: 70vh; overflow-y: auto; }
@@ -113,39 +115,11 @@
     <div class="tab-content border bg-white p-3 shadow-sm">
 
         <div class="tab-pane fade show active" id="view">
-            <div class="card border-0 bg-light mb-3">
-                <div class="card-body py-2">
-                    <div class="row g-2 align-items-end">
-                        <div class="col-md-3">
-                            <label class="small fw-bold" for="listSearch">Search list</label>
-                            <input type="search" id="listSearch" class="form-control form-control-sm" placeholder="Asset, equipment, owner, location...">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="small fw-bold" for="statusFilter">Status</label>
-                            <select id="statusFilter" class="form-select form-select-sm">
-                                <option value="all">All</option>
-                                <option value="overdue">Overdue</option>
-                                <option value="15d">Due <=15 days</option>
-                                <option value="30d">Due 16-30 days</option>
-                                <option value="ok">OK >30 days</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="small fw-bold" for="locationFilter">Location</label>
-                            <select id="locationFilter" class="form-select form-select-sm">
-                                <option value="all">All locations</option>
-                                {% for location in location_filter_options %}
-                                <option value="{{ location|lower }}">{{ location }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <button type="button" id="clearFilters" class="btn btn-outline-secondary btn-sm w-100">Clear Filters</button>
-                        </div>
-                        <div class="col-md-2 text-md-end small text-muted">
-                            Showing <strong id="visibleCount">{{ items|length }}</strong> of {{ items|length }} records
-                        </div>
-                    </div>
+            <div class="d-flex justify-content-between align-items-center bg-light rounded p-2 mb-2">
+                <div class="small text-muted">Use the filter boxes below each column heading to filter column-wise.</div>
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" id="clearColumnFilters" class="btn btn-outline-secondary btn-sm">Clear Column Filters</button>
+                    <span class="small text-muted">Showing <strong id="visibleCount">{{ items|length }}</strong> of {{ items|length }} records</span>
                 </div>
             </div>
             <div class="table-responsive">
@@ -176,6 +150,46 @@
                             <th>Status</th>
                             <th>Action</th>
                         </tr>
+                        <tr class="column-filter-row">
+                            <th><input class="form-control column-filter" data-column="0" placeholder="Filter"></th>
+                            <th><input class="form-control column-filter" data-column="1" placeholder="Asset"></th>
+                            <th><input class="form-control column-filter" data-column="2" placeholder="Equipment"></th>
+                            <th><input class="form-control column-filter" data-column="3" placeholder="Make"></th>
+                            <th><input class="form-control column-filter" data-column="4" placeholder="Model"></th>
+                            <th><input class="form-control column-filter" data-column="5" placeholder="Sl No"></th>
+                            <th><input class="form-control column-filter" data-column="6" placeholder="Range"></th>
+                            <th><input class="form-control column-filter" data-column="7" placeholder="Accuracy"></th>
+                            <th><input class="form-control column-filter" data-column="8" placeholder="Criteria"></th>
+                            <th><input class="form-control column-filter" data-column="9" placeholder="Application"></th>
+                            <th><input class="form-control column-filter" data-column="10" placeholder="Parameter"></th>
+                            <th><input class="form-control column-filter" data-column="11" placeholder="Owner"></th>
+                            <th>
+                                <select class="form-select column-filter" data-column="12">
+                                    <option value="">All</option>
+                                    {% for location in location_filter_options %}
+                                    <option value="{{ location|lower }}">{{ location }}</option>
+                                    {% endfor %}
+                                </select>
+                            </th>
+                            <th><input class="form-control column-filter" data-column="13" placeholder="Agency"></th>
+                            <th><input class="form-control column-filter" data-column="14" placeholder="Type"></th>
+                            <th><input class="form-control column-filter" data-column="15" placeholder="Method"></th>
+                            <th><input class="form-control column-filter" data-column="16" placeholder="Reference"></th>
+                            <th><input class="form-control column-filter" data-column="17" placeholder="Freq"></th>
+                            <th><input class="form-control column-filter" data-column="18" placeholder="Cert"></th>
+                            <th><input class="form-control column-filter" data-column="19" placeholder="Cal Date"></th>
+                            <th><input class="form-control column-filter" data-column="20" placeholder="Due Date"></th>
+                            <th>
+                                <select class="form-select column-filter" data-column="21">
+                                    <option value="">All</option>
+                                    <option value="Overdue">Overdue</option>
+                                    <option value="15D">15D</option>
+                                    <option value="30D">30D</option>
+                                    <option value="OK">OK</option>
+                                </select>
+                            </th>
+                            <th></th>
+                        </tr>
                     </thead>
                     <tbody>
                         {% for item in items %}
@@ -204,7 +218,9 @@
                             <td>{{ item.c19_cal_date }}</td>
                             <td>{{ item.c20_due_date }}</td>
                             <td class="text-center">
-                                {% if days <= 15 %}
+                                {% if days < 0 %}
+                                    <span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill"></i> Overdue</span>
+                                {% elif days <= 15 %}
                                     <span class="badge bg-warning text-dark"><i class="bi bi-fire"></i> 15D</span>
                                 {% elif days <= 30 %}
                                     <span class="badge bg-primary"><i class="bi bi-clock-history"></i> 30D</span>
@@ -460,24 +476,29 @@
             });
         }
 
-        const listSearch = document.getElementById('listSearch');
-        const statusFilter = document.getElementById('statusFilter');
-        const locationFilter = document.getElementById('locationFilter');
-        const clearFilters = document.getElementById('clearFilters');
+        const columnFilters = Array.from(document.querySelectorAll('.column-filter'));
+        const clearColumnFilters = document.getElementById('clearColumnFilters');
         const visibleCount = document.getElementById('visibleCount');
         const tableRows = Array.from(document.querySelectorAll('#masterTable tbody tr'));
 
-        function applyListFilters() {
-            const searchTerm = (listSearch?.value || '').trim().toLowerCase();
-            const selectedStatus = statusFilter?.value || 'all';
-            const selectedLocation = locationFilter?.value || 'all';
+        function getCellText(row, columnIndex) {
+            const cell = row.cells[columnIndex];
+            return cell ? cell.textContent.trim().toLowerCase() : '';
+        }
+
+        function applyColumnFilters() {
+            const activeFilters = columnFilters
+                .map(filter => ({
+                    column: Number(filter.dataset.column),
+                    value: (filter.value || '').trim().toLowerCase()
+                }))
+                .filter(filter => filter.value !== '');
             let shown = 0;
 
             tableRows.forEach(row => {
-                const matchesSearch = !searchTerm || (row.dataset.search || '').includes(searchTerm);
-                const matchesStatus = selectedStatus === 'all' || row.dataset.status === selectedStatus;
-                const matchesLocation = selectedLocation === 'all' || row.dataset.location === selectedLocation;
-                const shouldShow = matchesSearch && matchesStatus && matchesLocation;
+                const shouldShow = activeFilters.every(filter =>
+                    getCellText(row, filter.column).includes(filter.value)
+                );
                 row.style.display = shouldShow ? '' : 'none';
                 if (shouldShow) shown += 1;
             });
@@ -485,16 +506,14 @@
             if (visibleCount) visibleCount.textContent = shown;
         }
 
-        [listSearch, statusFilter, locationFilter].forEach(el => {
-            if (el) el.addEventListener('input', applyListFilters);
-            if (el) el.addEventListener('change', applyListFilters);
+        columnFilters.forEach(filter => {
+            filter.addEventListener('input', applyColumnFilters);
+            filter.addEventListener('change', applyColumnFilters);
         });
-        if (clearFilters) {
-            clearFilters.addEventListener('click', function () {
-                if (listSearch) listSearch.value = '';
-                if (statusFilter) statusFilter.value = 'all';
-                if (locationFilter) locationFilter.value = 'all';
-                applyListFilters();
+        if (clearColumnFilters) {
+            clearColumnFilters.addEventListener('click', function () {
+                columnFilters.forEach(filter => { filter.value = ''; });
+                applyColumnFilters();
             });
         }
 
