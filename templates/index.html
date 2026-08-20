@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+
     <style>
         body {
             background: url("{{ url_for('static', filename='images/background-image.jpg') }}") center center / cover no-repeat fixed;
@@ -111,10 +111,45 @@
     </ul>
 
     <div class="tab-content border bg-white p-3 shadow-sm">
-        
+
         <div class="tab-pane fade show active" id="view">
+            <div class="card border-0 bg-light mb-3">
+                <div class="card-body py-2">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="small fw-bold" for="listSearch">Search list</label>
+                            <input type="search" id="listSearch" class="form-control form-control-sm" placeholder="Asset, equipment, owner, location...">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="small fw-bold" for="statusFilter">Status</label>
+                            <select id="statusFilter" class="form-select form-select-sm">
+                                <option value="all">All</option>
+                                <option value="overdue">Overdue</option>
+                                <option value="15d">Due <=15 days</option>
+                                <option value="30d">Due 16-30 days</option>
+                                <option value="ok">OK >30 days</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="small fw-bold" for="locationFilter">Location</label>
+                            <select id="locationFilter" class="form-select form-select-sm">
+                                <option value="all">All locations</option>
+                                {% for location in location_filter_options %}
+                                <option value="{{ location|lower }}">{{ location }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" id="clearFilters" class="btn btn-outline-secondary btn-sm w-100">Clear Filters</button>
+                        </div>
+                        <div class="col-md-2 text-md-end small text-muted">
+                            Showing <strong id="visibleCount">{{ items|length }}</strong> of {{ items|length }} records
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="table-responsive">
-                <table class="table table-hover table-bordered table-xs">
+                <table id="masterTable" class="table table-hover table-bordered table-xs">
                     <thead class="sticky-header">
                         <tr>
                             <th>Sl. No</th>
@@ -145,7 +180,8 @@
                     <tbody>
                         {% for item in items %}
                         {% set days = (item.c20_due_date - today).days if item.c20_due_date else 999 %}
-                        <tr class="{% if days <= 15 %}due-15{% elif days <= 30 %}due-30{% endif %}">
+                        {% set row_status = 'overdue' if days < 0 else ('15d' if days <= 15 else ('30d' if days <= 30 else 'ok')) %}
+                        <tr class="{% if days <= 15 %}due-15{% elif days <= 30 %}due-30{% endif %}" data-status="{{ row_status }}" data-location="{{ item.c13_location|lower }}" data-search="{{ (item.c2_asset_id ~ ' ' ~ item.c3_eq_name ~ ' ' ~ item.c4_make ~ ' ' ~ item.c12_owner ~ ' ' ~ item.c13_location ~ ' ' ~ item.c18_cert_no)|lower }}">
                             <td>{{ item.c1_sl_no }}</td>
                             <td><strong>{{ item.c2_asset_id }}</strong></td>
                             <td>{{ item.c3_eq_name }}</td>
@@ -197,7 +233,7 @@
                 <div class="col-md-3"><label class="small">Kaynes Asset ID *</label><input type="text" name="c2_asset_id" id="c2" class="form-control form-control-sm" required></div>
                 <div class="col-md-4"><label class="small">Name of Eqpmt.</label><input type="text" name="c3_eq_name" id="c3" class="form-control form-control-sm"></div>
                 <div class="col-md-3"><label class="small">Make</label><input type="text" name="c4_make" id="c4" class="form-control form-control-sm"></div>
-                
+
                 <div class="col-md-3"><label class="small">Model No.</label><input type="text" name="c5_model_no" id="c5" class="form-control form-control-sm"></div>
                 <div class="col-md-3"><label class="small">Equipment Sl No</label><input type="text" name="c6_eq_sl_no" id="c6" class="form-control form-control-sm"></div>
                 <div class="col-md-3"><label class="small">Range</label><input type="text" name="c7_range" id="c7" class="form-control form-control-sm"></div>
@@ -219,7 +255,7 @@
 
                 <div class="col-md-3"><label class="small">Calibration Date</label><input type="date" name="c19_cal_date" id="c19" class="form-control form-control-sm"></div>
                 <div class="col-md-3"><label class="small">Due Date</label><input type="date" name="c20_due_date" id="c20" class="form-control form-control-sm"></div>
-                
+
                 <div class="col-12 mt-3">
                     <button type="submit" class="btn btn-success"><i class="bi bi-save2"></i> Save Changes</button>
                     <button type="reset" class="btn btn-secondary">Clear</button>
@@ -240,9 +276,10 @@
                 <div class="col-md-3 border p-3 rounded shadow-sm ms-md-3 mt-3 mt-md-0">
                     <h5><i class="bi bi-geo-alt-fill text-primary"></i> Location Email Map</h5>
                     <form action="/manage_location_mail" method="POST" class="mb-3">
-                        <input type="text" name="location" class="form-control mb-2" placeholder="Location" required>
-                        <input type="email" name="email" class="form-control mb-2" placeholder="Email ID" required>
+                        <input type="text" name="location" class="form-control mb-2" placeholder="Location exactly as in master" required>
+                        <input type="text" name="email" class="form-control mb-2" placeholder="Email ID(s), comma separated" required>
                         <button type="submit" class="btn btn-outline-primary btn-sm w-100">Save Location Mail</button>
+                        <div class="form-text">Locations are matched case-insensitively and extra spaces are ignored. Multiple emails are supported.</div>
                     </form>
                     <div class="small">
                         {% for lm in location_mails %}
@@ -420,6 +457,44 @@
                         }
                     }
                 }
+            });
+        }
+
+        const listSearch = document.getElementById('listSearch');
+        const statusFilter = document.getElementById('statusFilter');
+        const locationFilter = document.getElementById('locationFilter');
+        const clearFilters = document.getElementById('clearFilters');
+        const visibleCount = document.getElementById('visibleCount');
+        const tableRows = Array.from(document.querySelectorAll('#masterTable tbody tr'));
+
+        function applyListFilters() {
+            const searchTerm = (listSearch?.value || '').trim().toLowerCase();
+            const selectedStatus = statusFilter?.value || 'all';
+            const selectedLocation = locationFilter?.value || 'all';
+            let shown = 0;
+
+            tableRows.forEach(row => {
+                const matchesSearch = !searchTerm || (row.dataset.search || '').includes(searchTerm);
+                const matchesStatus = selectedStatus === 'all' || row.dataset.status === selectedStatus;
+                const matchesLocation = selectedLocation === 'all' || row.dataset.location === selectedLocation;
+                const shouldShow = matchesSearch && matchesStatus && matchesLocation;
+                row.style.display = shouldShow ? '' : 'none';
+                if (shouldShow) shown += 1;
+            });
+
+            if (visibleCount) visibleCount.textContent = shown;
+        }
+
+        [listSearch, statusFilter, locationFilter].forEach(el => {
+            if (el) el.addEventListener('input', applyListFilters);
+            if (el) el.addEventListener('change', applyListFilters);
+        });
+        if (clearFilters) {
+            clearFilters.addEventListener('click', function () {
+                if (listSearch) listSearch.value = '';
+                if (statusFilter) statusFilter.value = 'all';
+                if (locationFilter) locationFilter.value = 'all';
+                applyListFilters();
             });
         }
 
